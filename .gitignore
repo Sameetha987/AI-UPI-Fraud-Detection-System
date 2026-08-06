@@ -1,0 +1,12 @@
+# IntelliJ
+.idea/
+
+# Build folders
+**/target/
+
+# Local Spring configuration
+**/application-dev.properties
+
+# OS files
+.DS_Store
+Thumbs.db
