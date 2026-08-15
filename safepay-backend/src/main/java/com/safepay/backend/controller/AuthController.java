@@ -1,5 +1,7 @@
 package com.safepay.backend.controller;
 
+import com.safepay.backend.dto.LoginRequest;
+import com.safepay.backend.dto.LoginResponse;
 import com.safepay.backend.dto.RegisterRequest;
 import com.safepay.backend.dto.RegisterResponse;
 import com.safepay.backend.service.AuthService;
@@ -28,5 +30,15 @@ public class AuthController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(response);
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<LoginResponse> login(
+            @Valid @RequestBody LoginRequest request
+    ) {
+
+        LoginResponse response = authService.login(request);
+
+        return ResponseEntity.ok(response);
     }
 }
