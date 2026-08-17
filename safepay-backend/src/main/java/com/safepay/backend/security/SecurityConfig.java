@@ -6,7 +6,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
@@ -18,9 +19,30 @@ public class SecurityConfig {
     }
 
     @Bean
+    public JwtAuthenticationConverter jwtAuthenticationConverter() {
+
+        JwtAuthenticationConverter converter =
+                new JwtAuthenticationConverter();
+
+        converter.setJwtGrantedAuthoritiesConverter(jwt -> {
+
+            String role = jwt.getClaimAsString("role");
+
+            if (role == null || role.isBlank()) {
+                return java.util.List.of();
+            }
+
+            return java.util.List.of(
+                    new SimpleGrantedAuthority("ROLE_" + role)
+            );
+        });
+
+        return converter;
+    }
+
+    @Bean
     public SecurityFilterChain securityFilterChain(
-            HttpSecurity http,
-            JwtDecoder jwtDecoder
+            HttpSecurity http
     ) throws Exception {
 
         http
@@ -33,17 +55,30 @@ public class SecurityConfig {
                 )
 
                 .authorizeHttpRequests(auth -> auth
+
+                        // Public authentication APIs
                         .requestMatchers(
                                 "/api/auth/register",
                                 "/api/auth/login"
                         ).permitAll()
 
+                        // Admin APIs
+                        .requestMatchers("/api/admin/**")
+                        .hasRole("ADMIN")
+
+                        // Merchant APIs
+                        .requestMatchers("/api/merchant/**")
+                        .hasRole("MERCHANT")
+
+                        // Everything else requires authentication
                         .anyRequest().authenticated()
                 )
 
                 .oauth2ResourceServer(oauth2 ->
                         oauth2.jwt(jwt ->
-                                jwt.decoder(jwtDecoder)
+                                jwt.jwtAuthenticationConverter(
+                                        jwtAuthenticationConverter()
+                                )
                         )
                 );
 
