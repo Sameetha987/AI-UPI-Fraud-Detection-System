@@ -6,12 +6,17 @@ import com.safepay.backend.entity.Account;
 import com.safepay.backend.entity.Transaction;
 import com.safepay.backend.repository.AccountRepository;
 import com.safepay.backend.repository.TransactionRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import com.safepay.backend.exception.TransactionNotFoundException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import org.springframework.data.domain.Pageable;
 import java.util.UUID;
+import java.time.LocalDate;
+import com.safepay.backend.exception.ResourceNotFoundException;
 
 @Service
 public class TransactionService {
@@ -60,7 +65,7 @@ public class TransactionService {
         Account senderAccount =
                 accountRepository.findByUserId(senderUserId)
                         .orElseThrow(() ->
-                                new RuntimeException(
+                                new ResourceNotFoundException(
                                         "Sender account not found"
                                 )
                         );
@@ -75,7 +80,7 @@ public class TransactionService {
                                 request.receiverAccountNumber().trim()
                         )
                         .orElseThrow(() ->
-                                new RuntimeException(
+                                new ResourceNotFoundException(
                                         "Receiver account not found"
                                 )
                         );
@@ -119,18 +124,36 @@ public class TransactionService {
         // 6. VALIDATE CURRENCY
         // =====================================================
 
-        if (!senderAccount.getCurrency()
-                .equalsIgnoreCase(request.currency())) {
+        if (request.currency() == null
+                || request.currency().isBlank()) {
 
-            throw new RuntimeException(
+            throw new IllegalArgumentException(
+                    "Currency is required"
+            );
+        }
+
+        String currency =
+                request.currency().trim().toUpperCase();
+
+        if (!currency.equals("INR")) {
+
+            throw new IllegalArgumentException(
+                    "Unsupported currency. Only INR is supported"
+            );
+        }
+
+        if (!senderAccount.getCurrency()
+                .equalsIgnoreCase(currency)) {
+
+            throw new IllegalArgumentException(
                     "Sender account currency mismatch"
             );
         }
 
         if (!receiverAccount.getCurrency()
-                .equalsIgnoreCase(request.currency())) {
+                .equalsIgnoreCase(currency)) {
 
-            throw new RuntimeException(
+            throw new IllegalArgumentException(
                     "Receiver account currency mismatch"
             );
         }
@@ -142,11 +165,21 @@ public class TransactionService {
 
         BigDecimal amount = request.amount();
 
-        if (amount == null
-                || amount.compareTo(BigDecimal.ZERO) <= 0) {
+        if (amount == null) {
+            throw new IllegalArgumentException(
+                    "Transfer amount is required"
+            );
+        }
 
-            throw new RuntimeException(
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException(
                     "Transfer amount must be greater than zero"
+            );
+        }
+
+        if (amount.scale() > 2) {
+            throw new IllegalArgumentException(
+                    "Transfer amount cannot have more than 2 decimal places"
             );
         }
 
@@ -173,9 +206,7 @@ public class TransactionService {
         transaction.setSenderAccount(senderAccount);
         transaction.setReceiverAccount(receiverAccount);
         transaction.setAmount(amount);
-        transaction.setCurrency(
-                request.currency().toUpperCase()
-        );
+        transaction.setCurrency(currency);
         transaction.setDescription(
                 request.description()
         );
@@ -248,6 +279,78 @@ public class TransactionService {
         return TransactionResponse.from(
                 savedTransaction
         );
+    }
+
+    @Transactional(readOnly = true)
+    public Page<TransactionResponse> getMyTransactions(
+            Long userId,
+            int page,
+            int size,
+            String type,
+            Transaction.Status status,
+            LocalDate fromDate,
+            LocalDate toDate
+    ) {
+
+        Account account = accountRepository
+                .findByUserId(userId)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Account not found")
+                );
+
+        Pageable pageable = PageRequest.of(page, size);
+
+        LocalDateTime fromDateTime = null;
+        LocalDateTime toDateTime = null;
+
+        if (fromDate != null) {
+            fromDateTime = fromDate.atStartOfDay();
+        }
+
+        if (toDate != null) {
+            toDateTime = toDate.plusDays(1).atStartOfDay();
+        }
+
+        Page<Transaction> transactions =
+                transactionRepository.findUserTransactions(
+                        account.getId(),
+                        type,
+                        status,
+                        fromDateTime,
+                        toDateTime,
+                        pageable
+                );
+
+        return transactions.map(TransactionResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public TransactionResponse getTransactionByReference(
+            Long userId,
+            String transactionReference
+    ) {
+
+        Account account = accountRepository
+                .findByUserId(userId)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Account not found")
+                );
+
+        Transaction transaction =
+                transactionRepository
+                        .findByTransactionReferenceAndSenderAccountIdOrTransactionReferenceAndReceiverAccountId(
+                                transactionReference,
+                                account.getId(),
+                                transactionReference,
+                                account.getId()
+                        )
+                        .orElseThrow(() ->
+                                new TransactionNotFoundException(
+                                        "Transaction not found"
+                                )
+                        );
+
+        return TransactionResponse.from(transaction);
     }
 
 
