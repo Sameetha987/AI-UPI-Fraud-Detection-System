@@ -65,7 +65,9 @@ public class SecurityConfig {
                         // Admin APIs
                         .requestMatchers("/api/admin/**")
                         .hasRole("ADMIN")
-
+                        // Paying a merchant payment request
+                        .requestMatchers("/api/merchant/payments/pay")
+                        .authenticated()
                         // Merchant APIs
                         .requestMatchers("/api/merchant/**")
                         .hasRole("MERCHANT")
