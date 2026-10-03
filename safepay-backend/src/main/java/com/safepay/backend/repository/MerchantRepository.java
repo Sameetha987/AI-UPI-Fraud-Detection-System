@@ -3,6 +3,7 @@ package com.safepay.backend.repository;
 import com.safepay.backend.entity.Merchant;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface MerchantRepository
@@ -13,4 +14,6 @@ public interface MerchantRepository
     boolean existsByUserId(Long userId);
 
     boolean existsByBusinessName(String businessName);
+
+    List<Merchant> findAllByOrderByCreatedAtDesc();
 }

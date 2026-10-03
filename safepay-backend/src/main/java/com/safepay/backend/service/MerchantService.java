@@ -22,6 +22,7 @@ import com.safepay.backend.dto.TransactionResponse;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 import com.safepay.backend.dto.PaymentRequestPayRequest;
@@ -505,5 +506,88 @@ public class MerchantService {
                         .replace("-", "")
                         .substring(0, 20)
                         .toUpperCase();
+    }
+    //get all merchants
+    @Transactional(readOnly = true)
+    public List<AdminMerchantResponse> getAllMerchants() {
+
+        return merchantRepository.findAllByOrderByCreatedAtDesc()
+                .stream()
+                .map(AdminMerchantResponse::from)
+                .toList();
+    }
+    //Get merchant by ID
+    @Transactional(readOnly = true)
+    public AdminMerchantResponse getMerchantById(Long id) {
+
+        Merchant merchant = merchantRepository.findById(id)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Merchant not found")
+                );
+
+        return AdminMerchantResponse.from(merchant);
+    }
+    //block merchant
+    @Transactional
+    public AdminMerchantResponse blockMerchant(Long id) {
+
+        Merchant merchant = merchantRepository.findById(id)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Merchant not found")
+                );
+
+        if (merchant.getStatus() == Merchant.Status.BLOCKED) {
+            throw new IllegalArgumentException(
+                    "Merchant is already blocked"
+            );
+        }
+
+        merchant.setStatus(Merchant.Status.BLOCKED);
+
+        return AdminMerchantResponse.from(
+                merchantRepository.save(merchant)
+        );
+    }
+    //suspend merchant
+    @Transactional
+    public AdminMerchantResponse suspendMerchant(Long id) {
+
+        Merchant merchant = merchantRepository.findById(id)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Merchant not found")
+                );
+
+        if (merchant.getStatus() == Merchant.Status.SUSPENDED) {
+            throw new IllegalArgumentException(
+                    "Merchant is already suspended"
+            );
+        }
+
+        merchant.setStatus(Merchant.Status.SUSPENDED);
+
+        return AdminMerchantResponse.from(
+                merchantRepository.save(merchant)
+        );
+    }
+    //activate
+    @Transactional
+    public AdminMerchantResponse activateMerchant(Long id) {
+
+        Merchant merchant = merchantRepository.findById(id)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Merchant not found")
+                );
+
+        if (merchant.getStatus() == Merchant.Status.ACTIVE) {
+            throw new IllegalArgumentException(
+                    "Merchant is already active"
+            );
+        }
+
+        merchant.setStatus(Merchant.Status.ACTIVE);
+
+        return AdminMerchantResponse.from(
+                merchantRepository.save(merchant)
+        );
     }
 }

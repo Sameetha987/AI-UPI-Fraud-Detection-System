@@ -10,8 +10,9 @@ import org.springframework.web.bind.annotation.*;
 import com.safepay.backend.dto.TransactionResponse;
 import com.safepay.backend.entity.Transaction;
 import org.springframework.data.domain.Page;
-import com.safepay.backend.dto.AccountResponse;
 import com.safepay.backend.service.AccountService;
+import com.safepay.backend.dto.AdminMerchantResponse;
+import com.safepay.backend.service.MerchantService;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -21,9 +22,11 @@ public class AdminController {
 
     private final AdminService adminService;
     private final AccountService accountService;
-    public AdminController(AdminService adminService, AccountService accountService) {
+    private final MerchantService merchantService;
+    public AdminController(AdminService adminService, AccountService accountService, MerchantService merchantService) {
         this.adminService = adminService;
         this.accountService = accountService;
+        this.merchantService = merchantService;
     }
 
     // =========================================================
@@ -183,6 +186,54 @@ public class AdminController {
 
         return ResponseEntity.ok(
                 accountService.unblockAccount(id)
+        );
+    }
+    //get all merchants
+    @GetMapping("/merchants")
+    public ResponseEntity<List<AdminMerchantResponse>> getAllMerchants() {
+
+        return ResponseEntity.ok(
+                merchantService.getAllMerchants()
+        );
+    }
+    //get a merchant
+    @GetMapping("/merchants/{id}")
+    public ResponseEntity<AdminMerchantResponse> getMerchantById(
+            @PathVariable Long id
+    ) {
+
+        return ResponseEntity.ok(
+                merchantService.getMerchantById(id)
+        );
+    }
+    //block
+    @PatchMapping("/merchants/{id}/block")
+    public ResponseEntity<AdminMerchantResponse> blockMerchant(
+            @PathVariable Long id
+    ) {
+
+        return ResponseEntity.ok(
+                merchantService.blockMerchant(id)
+        );
+    }
+    //suspend
+    @PatchMapping("/merchants/{id}/suspend")
+    public ResponseEntity<AdminMerchantResponse> suspendMerchant(
+            @PathVariable Long id
+    ) {
+
+        return ResponseEntity.ok(
+                merchantService.suspendMerchant(id)
+        );
+    }
+    //activate
+    @PatchMapping("/merchants/{id}/activate")
+    public ResponseEntity<AdminMerchantResponse> activateMerchant(
+            @PathVariable Long id
+    ) {
+
+        return ResponseEntity.ok(
+                merchantService.activateMerchant(id)
         );
     }
 }
