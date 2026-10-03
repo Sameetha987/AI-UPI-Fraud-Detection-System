@@ -1,5 +1,6 @@
 package com.safepay.backend.controller;
 
+import com.safepay.backend.dto.AdminAccountResponse;
 import com.safepay.backend.dto.AdminUserResponse;
 import com.safepay.backend.service.AdminService;
 import org.springframework.http.ResponseEntity;
@@ -9,7 +10,8 @@ import org.springframework.web.bind.annotation.*;
 import com.safepay.backend.dto.TransactionResponse;
 import com.safepay.backend.entity.Transaction;
 import org.springframework.data.domain.Page;
-
+import com.safepay.backend.dto.AccountResponse;
+import com.safepay.backend.service.AccountService;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -18,9 +20,10 @@ import java.util.List;
 public class AdminController {
 
     private final AdminService adminService;
-
-    public AdminController(AdminService adminService) {
+    private final AccountService accountService;
+    public AdminController(AdminService adminService, AccountService accountService) {
         this.adminService = adminService;
+        this.accountService = accountService;
     }
 
     // =========================================================
@@ -149,6 +152,37 @@ public class AdminController {
                         fromDate,
                         toDate
                 )
+        );
+
+    }
+    // =========================================================
+    // GET ALL ACCOUNTS
+    // GET /api/admin/accounts
+    // =========================================================
+
+    @GetMapping("/accounts")
+    public ResponseEntity<List<AdminAccountResponse>> getAllAccounts() {
+
+        return ResponseEntity.ok(
+                accountService.getAllAccounts()
+        );
+    }
+    @PatchMapping("/accounts/{id}/block")
+    public ResponseEntity<AdminAccountResponse> blockAccount(
+            @PathVariable Long id
+    ) {
+
+        return ResponseEntity.ok(
+                accountService.blockAccount(id)
+        );
+    }
+    @PatchMapping("/accounts/{id}/unblock")
+    public ResponseEntity<AdminAccountResponse> unblockAccount(
+            @PathVariable Long id
+    ) {
+
+        return ResponseEntity.ok(
+                accountService.unblockAccount(id)
         );
     }
 }
