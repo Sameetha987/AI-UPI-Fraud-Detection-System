@@ -1,17 +1,14 @@
 package com.safepay.backend.controller;
 
-import com.safepay.backend.dto.AdminAccountResponse;
-import com.safepay.backend.dto.AdminUserResponse;
+import com.safepay.backend.dto.*;
 import com.safepay.backend.service.AdminService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import com.safepay.backend.dto.TransactionResponse;
 import com.safepay.backend.entity.Transaction;
 import org.springframework.data.domain.Page;
 import com.safepay.backend.service.AccountService;
-import com.safepay.backend.dto.AdminMerchantResponse;
 import com.safepay.backend.service.MerchantService;
 import java.time.LocalDate;
 import java.util.List;
@@ -234,6 +231,13 @@ public class AdminController {
 
         return ResponseEntity.ok(
                 merchantService.activateMerchant(id)
+        );
+    }
+    @GetMapping("/dashboard")
+    public ResponseEntity<AdminDashboardResponse> getDashboard() {
+
+        return ResponseEntity.ok(
+                adminService.getDashboard()
         );
     }
 }

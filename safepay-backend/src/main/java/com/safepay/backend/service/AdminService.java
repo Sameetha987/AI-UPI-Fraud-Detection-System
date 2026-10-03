@@ -1,5 +1,13 @@
 package com.safepay.backend.service;
+import com.safepay.backend.dto.AdminDashboardResponse;
+import com.safepay.backend.entity.Account;
+import com.safepay.backend.entity.Merchant;
+import com.safepay.backend.entity.Transaction;
+import com.safepay.backend.repository.AccountRepository;
+import com.safepay.backend.repository.MerchantRepository;
+import com.safepay.backend.repository.TransactionRepository;
 
+import java.math.BigDecimal;
 import com.safepay.backend.dto.AdminUserResponse;
 import com.safepay.backend.entity.User;
 import com.safepay.backend.repository.UserRepository;
@@ -21,9 +29,13 @@ import java.util.List;
 public class AdminService {
 
     private final UserRepository userRepository;
+    private final AccountRepository accountRepository;
+    private final MerchantRepository merchantRepository;
     private final TransactionRepository transactionRepository;
-    public AdminService(UserRepository userRepository, TransactionRepository transactionRepository) {
+    public AdminService(UserRepository userRepository, AccountRepository accountRepository, MerchantRepository merchantRepository, TransactionRepository transactionRepository) {
         this.userRepository = userRepository;
+        this.accountRepository = accountRepository;
+        this.merchantRepository = merchantRepository;
         this.transactionRepository = transactionRepository;
     }
 
@@ -197,5 +209,117 @@ public class AdminService {
                         pageable
                 )
                 .map(TransactionResponse::from);
+    }
+    @Transactional(readOnly = true)
+    public AdminDashboardResponse getDashboard() {
+
+        long totalUsers = userRepository.count();
+
+        long activeUsers = userRepository.findAll()
+                .stream()
+                .filter(user -> user.getStatus() == User.Status.ACTIVE)
+                .count();
+
+        long blockedUsers = userRepository.findAll()
+                .stream()
+                .filter(user -> user.getStatus() == User.Status.BLOCKED)
+                .count();
+
+        long suspendedUsers = userRepository.findAll()
+                .stream()
+                .filter(user -> user.getStatus() == User.Status.SUSPENDED)
+                .count();
+
+
+        long totalAccounts = accountRepository.count();
+
+        long activeAccounts = accountRepository.findAll()
+                .stream()
+                .filter(account -> account.getStatus() == Account.Status.ACTIVE)
+                .count();
+
+        long blockedAccounts = accountRepository.findAll()
+                .stream()
+                .filter(account -> account.getStatus() == Account.Status.BLOCKED)
+                .count();
+
+
+        long totalMerchants = merchantRepository.count();
+
+        long activeMerchants = merchantRepository.findAll()
+                .stream()
+                .filter(merchant -> merchant.getStatus() == Merchant.Status.ACTIVE)
+                .count();
+
+        long blockedMerchants = merchantRepository.findAll()
+                .stream()
+                .filter(merchant -> merchant.getStatus() == Merchant.Status.BLOCKED)
+                .count();
+
+        long suspendedMerchants = merchantRepository.findAll()
+                .stream()
+                .filter(merchant -> merchant.getStatus() == Merchant.Status.SUSPENDED)
+                .count();
+
+
+        long totalTransactions = transactionRepository.count();
+
+        long successfulTransactions = transactionRepository.findAll()
+                .stream()
+                .filter(transaction ->
+                        transaction.getStatus() == Transaction.Status.SUCCESS)
+                .count();
+
+        long failedTransactions = transactionRepository.findAll()
+                .stream()
+                .filter(transaction ->
+                        transaction.getStatus() == Transaction.Status.FAILED)
+                .count();
+
+        long pendingTransactions = transactionRepository.findAll()
+                .stream()
+                .filter(transaction ->
+                        transaction.getStatus() == Transaction.Status.PENDING)
+                .count();
+
+        long cancelledTransactions = transactionRepository.findAll()
+                .stream()
+                .filter(transaction ->
+                        transaction.getStatus() == Transaction.Status.CANCELLED)
+                .count();
+
+
+        BigDecimal totalTransactionVolume =
+                transactionRepository.findAll()
+                        .stream()
+                        .filter(transaction ->
+                                transaction.getStatus() == Transaction.Status.SUCCESS)
+                        .map(Transaction::getAmount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+
+        return new AdminDashboardResponse(
+                totalUsers,
+                activeUsers,
+                blockedUsers,
+                suspendedUsers,
+
+                totalAccounts,
+                activeAccounts,
+                blockedAccounts,
+
+                totalMerchants,
+                activeMerchants,
+                blockedMerchants,
+                suspendedMerchants,
+
+                totalTransactions,
+                successfulTransactions,
+                failedTransactions,
+                pendingTransactions,
+                cancelledTransactions,
+
+                totalTransactionVolume
+        );
     }
 }
