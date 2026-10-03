@@ -1,13 +1,16 @@
 package com.safepay.backend.controller;
 
 import com.safepay.backend.dto.AdminUserResponse;
-import com.safepay.backend.security.JwtService;
 import com.safepay.backend.service.AdminService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import com.safepay.backend.dto.TransactionResponse;
+import com.safepay.backend.entity.Transaction;
+import org.springframework.data.domain.Page;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -99,6 +102,53 @@ public class AdminController {
 
         return ResponseEntity.ok(
                 adminService.activateUser(id, adminId)
+        );
+    }
+
+    // =========================================================
+// GET ALL TRANSACTIONS
+// GET /api/admin/transactions
+// =========================================================
+
+    @GetMapping("/transactions")
+    public ResponseEntity<Page<TransactionResponse>> getAllTransactions(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) LocalDate fromDate,
+            @RequestParam(required = false) LocalDate toDate
+    ) {
+
+        Transaction.Status transactionStatus = null;
+
+        if (status != null && !status.isBlank()) {
+
+            String normalizedStatus =
+                    status.trim().toUpperCase();
+
+            try {
+
+                transactionStatus =
+                        Transaction.Status.valueOf(
+                                normalizedStatus
+                        );
+
+            } catch (IllegalArgumentException exception) {
+
+                throw new IllegalArgumentException(
+                        "Invalid transaction status. Allowed values: PENDING, SUCCESS, FAILED, CANCELLED"
+                );
+            }
+        }
+
+        return ResponseEntity.ok(
+                adminService.getAllTransactions(
+                        page,
+                        size,
+                        transactionStatus,
+                        fromDate,
+                        toDate
+                )
         );
     }
 }

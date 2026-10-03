@@ -6,15 +6,25 @@ import com.safepay.backend.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.safepay.backend.dto.TransactionResponse;
+import com.safepay.backend.entity.Transaction;
+import com.safepay.backend.repository.TransactionRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
 import java.util.List;
 
 @Service
 public class AdminService {
 
     private final UserRepository userRepository;
-
-    public AdminService(UserRepository userRepository) {
+    private final TransactionRepository transactionRepository;
+    public AdminService(UserRepository userRepository, TransactionRepository transactionRepository) {
         this.userRepository = userRepository;
+        this.transactionRepository = transactionRepository;
     }
 
     // =========================================================
@@ -127,5 +137,65 @@ public class AdminService {
                     "Admin cannot modify another admin"
             );
         }
+    }
+
+    // =========================================================
+// ADMIN TRANSACTION MONITORING
+// =========================================================
+
+    @Transactional(readOnly = true)
+    public Page<TransactionResponse> getAllTransactions(
+            int page,
+            int size,
+            Transaction.Status status,
+            LocalDate fromDate,
+            LocalDate toDate
+    ) {
+
+        if (page < 0) {
+            throw new IllegalArgumentException(
+                    "Page number cannot be negative"
+            );
+        }
+
+        if (size < 1 || size > 50) {
+            throw new IllegalArgumentException(
+                    "Page size must be between 1 and 50"
+            );
+        }
+
+        if (fromDate != null
+                && toDate != null
+                && fromDate.isAfter(toDate)) {
+
+            throw new IllegalArgumentException(
+                    "fromDate cannot be after toDate"
+            );
+        }
+
+        LocalDateTime fromDateTime = null;
+        LocalDateTime toDateTime = null;
+
+        if (fromDate != null) {
+            fromDateTime =
+                    fromDate.atStartOfDay();
+        }
+
+        if (toDate != null) {
+            toDateTime =
+                    toDate.plusDays(1).atStartOfDay();
+        }
+
+        PageRequest pageable =
+                PageRequest.of(page, size);
+
+        return transactionRepository
+                .findAllTransactions(
+                        status,
+                        fromDateTime,
+                        toDateTime,
+                        pageable
+                )
+                .map(TransactionResponse::from);
     }
 }

@@ -57,4 +57,18 @@ public interface TransactionRepository
             @Param("toDate") LocalDateTime toDate,
             Pageable pageable
     );
+    @Query("""
+    SELECT t
+    FROM Transaction t
+    WHERE (:status IS NULL OR t.status = :status)
+      AND (:fromDate IS NULL OR t.createdAt >= :fromDate)
+      AND (:toDate IS NULL OR t.createdAt < :toDate)
+    ORDER BY t.createdAt DESC
+    """)
+    Page<Transaction> findAllTransactions(
+            @Param("status") Transaction.Status status,
+            @Param("fromDate") LocalDateTime fromDate,
+            @Param("toDate") LocalDateTime toDate,
+            Pageable pageable
+    );
 }
