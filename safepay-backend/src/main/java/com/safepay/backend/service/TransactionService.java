@@ -23,13 +23,14 @@ public class TransactionService {
 
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
-
+    private final AuditLogService auditLogService;
     public TransactionService(
             AccountRepository accountRepository,
-            TransactionRepository transactionRepository
+            TransactionRepository transactionRepository, AuditLogService auditLogService
     ) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
@@ -191,9 +192,14 @@ public class TransactionService {
         if (senderAccount.getBalance()
                 .compareTo(amount) < 0) {
 
-            throw new RuntimeException(
-                    "Insufficient balance"
+            String reason = "Insufficient balance";
+
+            recordTransferFailure(
+                    senderUserId,
+                    reason
             );
+
+            throw new RuntimeException(reason);
         }
 
 
@@ -222,7 +228,11 @@ public class TransactionService {
                 Transaction.Status.PENDING
         );
 
+        BigDecimal senderBalanceBefore =
+                senderAccount.getBalance();
 
+        BigDecimal receiverBalanceBefore =
+                receiverAccount.getBalance();
         // =====================================================
         // 10. DEBIT SENDER
         // =====================================================
@@ -241,7 +251,11 @@ public class TransactionService {
                 receiverAccount.getBalance()
                         .add(amount)
         );
+        BigDecimal senderBalanceAfter =
+                senderAccount.getBalance();
 
+        BigDecimal receiverBalanceAfter =
+                receiverAccount.getBalance();
 
         // =====================================================
         // 12. MARK TRANSACTION SUCCESS
@@ -271,7 +285,38 @@ public class TransactionService {
         Transaction savedTransaction =
                 transactionRepository.save(transaction);
 
+        String oldValue = String.format(
+                "{\"senderBalance\":\"%s\",\"receiverBalance\":\"%s\"}",
+                senderBalanceBefore,
+                receiverBalanceBefore
+        );
 
+        String newValue = String.format(
+                "{\"senderBalance\":\"%s\",\"receiverBalance\":\"%s\"}",
+                senderBalanceAfter,
+                receiverBalanceAfter
+        );
+
+        String description = String.format(
+                "Transfer of INR %s from account %s to account %s",
+                amount,
+                maskAccountNumber(
+                        senderAccount.getAccountNumber()
+                ),
+                maskAccountNumber(
+                        receiverAccount.getAccountNumber()
+                )
+        );
+
+        auditLogService.recordBusinessEvent(
+                senderUserId,
+                "TRANSFER_SUCCESS",
+                "TRANSACTION",
+                savedTransaction.getTransactionReference(),
+                oldValue,
+                newValue,
+                description
+        );
         // =====================================================
         // 15. RETURN RESPONSE
         // =====================================================
@@ -366,5 +411,31 @@ public class TransactionService {
                         .replace("-", "")
                         .substring(0, 20)
                         .toUpperCase();
+    }
+
+    private String maskAccountNumber(String accountNumber) {
+
+        if (accountNumber == null || accountNumber.length() < 4) {
+            return "****";
+        }
+
+        return "******" +
+                accountNumber.substring(
+                        accountNumber.length() - 4
+                );
+    }
+    private void recordTransferFailure(
+            Long senderUserId,
+            String reason
+    ) {
+
+        auditLogService.recordBusinessFailure(
+                senderUserId,
+                "TRANSFER_FAILED",
+                "TRANSACTION",
+                null,
+                "Transfer failed",
+                reason
+        );
     }
 }

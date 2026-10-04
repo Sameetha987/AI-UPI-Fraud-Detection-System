@@ -12,6 +12,13 @@ import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
 public class SecurityConfig {
+    private final AuditAuthenticationEntryPoint auditAuthenticationEntryPoint;
+    private final AuditAccessDeniedHandler auditAccessDeniedHandler;
+
+    public SecurityConfig(AuditAuthenticationEntryPoint auditAuthenticationEntryPoint, AuditAccessDeniedHandler auditAccessDeniedHandler) {
+        this.auditAuthenticationEntryPoint = auditAuthenticationEntryPoint;
+        this.auditAccessDeniedHandler = auditAccessDeniedHandler;
+    }
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -75,7 +82,14 @@ public class SecurityConfig {
                         // Everything else requires authentication
                         .anyRequest().authenticated()
                 )
-
+                .exceptionHandling(exception -> exception
+                        .authenticationEntryPoint(
+                                auditAuthenticationEntryPoint
+                        )
+                        .accessDeniedHandler(
+                                auditAccessDeniedHandler
+                        )
+                )
                 .oauth2ResourceServer(oauth2 ->
                         oauth2.jwt(jwt ->
                                 jwt.jwtAuthenticationConverter(
@@ -83,6 +97,7 @@ public class SecurityConfig {
                                 )
                         )
                 );
+
 
         return http.build();
     }

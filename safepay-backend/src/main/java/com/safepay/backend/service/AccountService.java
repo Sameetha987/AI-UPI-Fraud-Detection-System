@@ -15,9 +15,10 @@ import java.util.List;
 public class AccountService {
 
     private final AccountRepository accountRepository;
-
-    public AccountService(AccountRepository accountRepository) {
+    private final AuditLogService auditLogService;
+    public AccountService(AccountRepository accountRepository, AuditLogService auditLogService) {
         this.accountRepository = accountRepository;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
@@ -26,7 +27,7 @@ public class AccountService {
             DepositRequest request
     ) {
 
-        // 1. Find the logged-in user's account
+        // 1. Find account
         Account account = accountRepository
                 .findByUserId(userId)
                 .orElseThrow(() ->
@@ -35,31 +36,133 @@ public class AccountService {
 
         // 2. Account must be active
         if (account.getStatus() != Account.Status.ACTIVE) {
-            throw new RuntimeException(
-                    "Account is not active"
+
+            String reason = "Account is not active";
+
+            auditLogService.recordBusinessFailure(
+                    userId,
+                    "DEPOSIT_FAILED",
+                    "ACCOUNT",
+                    String.valueOf(account.getId()),
+                    "Deposit failed",
+                    reason
             );
+
+            throw new RuntimeException(reason);
         }
 
         // 3. Currency must match
         if (!account.getCurrency()
                 .equalsIgnoreCase(request.currency())) {
 
-            throw new RuntimeException(
-                    "Account currency mismatch"
+            String reason = "Account currency mismatch";
+
+            auditLogService.recordBusinessFailure(
+                    userId,
+                    "DEPOSIT_FAILED",
+                    "ACCOUNT",
+                    String.valueOf(account.getId()),
+                    "Deposit failed",
+                    reason
             );
+
+            throw new RuntimeException(reason);
+        }
+        if (request.amount() == null) {
+
+            String reason = "Deposit amount is required";
+
+            auditLogService.recordBusinessFailure(
+                    userId,
+                    "DEPOSIT_FAILED",
+                    "ACCOUNT",
+                    String.valueOf(account.getId()),
+                    "Deposit failed",
+                    reason
+            );
+
+            throw new IllegalArgumentException(reason);
         }
 
-        // 4. Add money to the balance
+        if (request.amount().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+
+            String reason = "Deposit amount must be greater than zero";
+
+            auditLogService.recordBusinessFailure(
+                    userId,
+                    "DEPOSIT_FAILED",
+                    "ACCOUNT",
+                    String.valueOf(account.getId()),
+                    "Deposit failed",
+                    reason
+            );
+
+            throw new IllegalArgumentException(reason);
+        }
+
+        if (request.amount().scale() > 2) {
+
+            String reason = "Deposit amount cannot have more than 2 decimal places";
+
+            auditLogService.recordBusinessFailure(
+                    userId,
+                    "DEPOSIT_FAILED",
+                    "ACCOUNT",
+                    String.valueOf(account.getId()),
+                    "Deposit failed",
+                    reason
+            );
+
+            throw new IllegalArgumentException(reason);
+        }
+        // 4. Capture old balance
+        java.math.BigDecimal oldBalance =
+                account.getBalance();
+
+        // 5. Add money
         account.setBalance(
                 account.getBalance()
                         .add(request.amount())
         );
 
-        // 5. Save updated account
+        // 6. Save
         Account savedAccount =
                 accountRepository.save(account);
 
-        // 6. Return safe response
+        // 7. Capture new balance
+        java.math.BigDecimal newBalance =
+                savedAccount.getBalance();
+
+        // 8. Audit successful deposit
+        String oldValue = String.format(
+                "{\"balance\":\"%s\"}",
+                oldBalance
+        );
+
+        String newValue = String.format(
+                "{\"balance\":\"%s\"}",
+                newBalance
+        );
+
+        String description = String.format(
+                "Deposit of INR %s into account %s",
+                request.amount(),
+                maskAccountNumber(
+                        savedAccount.getAccountNumber()
+                )
+        );
+
+        auditLogService.recordBusinessEvent(
+                userId,
+                "DEPOSIT_SUCCESS",
+                "ACCOUNT",
+                String.valueOf(savedAccount.getId()),
+                oldValue,
+                newValue,
+                description
+        );
+
+        // 9. Return response
         return DepositResponse.from(
                 savedAccount,
                 "Deposit successful"
@@ -100,5 +203,16 @@ public class AccountService {
         account.setStatus(Account.Status.ACTIVE);
 
         return AdminAccountResponse.from(accountRepository.save(account));
+    }
+    private String maskAccountNumber(String accountNumber) {
+
+        if (accountNumber == null || accountNumber.length() < 4) {
+            return "****";
+        }
+
+        return "******" +
+                accountNumber.substring(
+                        accountNumber.length() - 4
+                );
     }
 }
