@@ -5,7 +5,11 @@ import com.safepay.backend.repository.AuditLogRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 
+import java.time.LocalDateTime;
 @Service
 public class AuditLogService {
 
@@ -155,5 +159,83 @@ public class AuditLogService {
         auditLog.setErrorMessage(errorMessage);
 
         return auditLogRepository.save(auditLog);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<AuditLog> searchAuditLogs(
+            String search,
+            String action,
+            String entityType,
+            AuditLog.Status status,
+            Long actorUserId,
+            LocalDateTime fromDate,
+            LocalDateTime toDate,
+            int page,
+            int size
+    ) {
+
+        if (page < 0) {
+            throw new IllegalArgumentException(
+                    "Page number cannot be negative"
+            );
+        }
+
+        if (size < 1 || size > 100) {
+            throw new IllegalArgumentException(
+                    "Page size must be between 1 and 100"
+            );
+        }
+
+        if (fromDate != null
+                && toDate != null
+                && fromDate.isAfter(toDate)) {
+
+            throw new IllegalArgumentException(
+                    "fromDate cannot be after toDate"
+            );
+        }
+
+        PageRequest pageable = PageRequest.of(
+                page,
+                size,
+                Sort.by(
+                        Sort.Direction.DESC,
+                        "createdAt"
+                )
+        );
+
+        return auditLogRepository.searchAuditLogs(
+                search,
+                action,
+                entityType,
+                status,
+                actorUserId,
+                fromDate,
+                toDate,
+                pageable
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.List<AuditLog> exportAuditLogs(
+            String search,
+            String action,
+            String entityType,
+            AuditLog.Status status,
+            Long actorUserId,
+            LocalDateTime fromDate,
+            LocalDateTime toDate
+    ) {
+
+        return auditLogRepository.searchAuditLogs(
+                search,
+                action,
+                entityType,
+                status,
+                actorUserId,
+                fromDate,
+                toDate,
+                org.springframework.data.domain.Pageable.unpaged()
+        ).getContent();
     }
 }
