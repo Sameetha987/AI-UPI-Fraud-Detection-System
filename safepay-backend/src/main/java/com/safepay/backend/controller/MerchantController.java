@@ -134,6 +134,25 @@ public class MerchantController {
             @RequestParam(required = false) LocalDate toDate
     ) {
 
+        if (page < 0) {
+            throw new IllegalArgumentException(
+                    "Page number cannot be negative"
+            );
+        }
+
+        if (size < 1 || size > 50) {
+            throw new IllegalArgumentException(
+                    "Page size must be between 1 and 50"
+            );
+        }
+        if (fromDate != null
+                && toDate != null
+                && fromDate.isAfter(toDate)) {
+
+            throw new IllegalArgumentException(
+                    "fromDate cannot be after toDate"
+            );
+        }
         Long userId =
                 Long.valueOf(jwt.getSubject());
 
@@ -141,11 +160,24 @@ public class MerchantController {
 
         if (status != null && !status.isBlank()) {
 
-            transactionStatus =
-                    Transaction.Status.valueOf(
-                            status.trim().toUpperCase()
-                    );
+            String normalizedStatus =
+                    status.trim().toUpperCase();
+
+            try {
+
+                transactionStatus =
+                        Transaction.Status.valueOf(
+                                normalizedStatus
+                        );
+
+            } catch (IllegalArgumentException exception) {
+
+                throw new IllegalArgumentException(
+                        "Invalid transaction status. Allowed values: PENDING, SUCCESS, FAILED, CANCELLED"
+                );
+            }
         }
+
 
         return ResponseEntity.ok(
                 merchantService.getMerchantTransactions(

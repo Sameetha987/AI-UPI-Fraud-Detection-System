@@ -12,8 +12,8 @@ public record UpdateProfileRequest(
 
         @NotBlank(message = "Phone number is required")
         @Pattern(
-                regexp = "^[0-9]{10,15}$",
-                message = "Phone number must contain 10 to 15 digits"
+                regexp = "^[6-9][0-9]{9}$",
+                message = "Phone number must be a valid 10-digit Indian mobile number"
         )
         String phone
 )

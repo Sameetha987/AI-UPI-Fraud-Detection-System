@@ -1,8 +1,6 @@
 package com.safepay.backend.dto;
 
-import jakarta.validation.constraints.DecimalMin;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.*;
 
 import java.math.BigDecimal;
 
@@ -15,6 +13,11 @@ public record DepositRequest(
         )
         BigDecimal amount,
 
+        @NotBlank(message = "Currency is required")
+        @Pattern(
+                regexp = "^[A-Za-z]{3}$",
+                message = "Currency must contain exactly 3 letters"
+        )
         @Size(
                 min = 3,
                 max = 3,
