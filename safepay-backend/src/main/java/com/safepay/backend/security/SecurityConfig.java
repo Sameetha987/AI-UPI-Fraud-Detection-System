@@ -72,13 +72,17 @@ public class SecurityConfig {
                         // Admin APIs
                         .requestMatchers("/api/admin/**")
                         .hasRole("ADMIN")
+                        // Create merchant profile
+                        .requestMatchers("/api/merchant/profile")
+                        .authenticated()
+
                         // Paying a merchant payment request
                         .requestMatchers("/api/merchant/payments/pay")
                         .authenticated()
+
                         // Merchant APIs
                         .requestMatchers("/api/merchant/**")
                         .hasRole("MERCHANT")
-
                         // Everything else requires authentication
                         .anyRequest().authenticated()
                 )

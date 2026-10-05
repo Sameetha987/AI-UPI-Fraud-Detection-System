@@ -206,31 +206,49 @@ public class AdminController {
     //block
     @PatchMapping("/merchants/{id}/block")
     public ResponseEntity<AdminMerchantResponse> blockMerchant(
-            @PathVariable Long id
+            @PathVariable Long id,
+            @AuthenticationPrincipal Jwt jwt
     ) {
 
+        Long adminId = Long.valueOf(jwt.getSubject());
+
         return ResponseEntity.ok(
-                merchantService.blockMerchant(id)
+                merchantService.blockMerchant(
+                        id,
+                        adminId
+                )
         );
     }
     //suspend
     @PatchMapping("/merchants/{id}/suspend")
     public ResponseEntity<AdminMerchantResponse> suspendMerchant(
-            @PathVariable Long id
+            @PathVariable Long id,
+            @AuthenticationPrincipal Jwt jwt
     ) {
 
+        Long adminId = Long.valueOf(jwt.getSubject());
+
         return ResponseEntity.ok(
-                merchantService.suspendMerchant(id)
+                merchantService.suspendMerchant(
+                        id,
+                        adminId
+                )
         );
     }
     //activate
     @PatchMapping("/merchants/{id}/activate")
     public ResponseEntity<AdminMerchantResponse> activateMerchant(
-            @PathVariable Long id
+            @PathVariable Long id,
+            @AuthenticationPrincipal Jwt jwt
     ) {
 
+        Long adminId = Long.valueOf(jwt.getSubject());
+
         return ResponseEntity.ok(
-                merchantService.activateMerchant(id)
+                merchantService.activateMerchant(
+                        id,
+                        adminId
+                )
         );
     }
     @GetMapping("/dashboard")

@@ -36,16 +36,18 @@ public class MerchantService {
     private final PaymentRequestRepository paymentRequestRepository;
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
+    private final AuditLogService auditLogService;
     public MerchantService(
             MerchantRepository merchantRepository,
             UserRepository userRepository,
-            PaymentRequestRepository paymentRequestRepository, AccountRepository accountRepository, TransactionRepository transactionRepository
+            PaymentRequestRepository paymentRequestRepository, AccountRepository accountRepository, TransactionRepository transactionRepository, AuditLogService auditLogService
     ) {
         this.merchantRepository = merchantRepository;
         this.userRepository = userRepository;
         this.paymentRequestRepository = paymentRequestRepository;
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
+        this.auditLogService = auditLogService;
     }
 
     // =========================================================
@@ -65,15 +67,15 @@ public class MerchantService {
                         )
                 );
 
-        if (user.getRole() != User.Role.MERCHANT) {
-            throw new IllegalArgumentException(
-                    "User is not a merchant"
-            );
-        }
-
         if (user.getStatus() != User.Status.ACTIVE) {
             throw new IllegalArgumentException(
                     "User account is not active"
+            );
+        }
+
+        if (user.getRole() != User.Role.USER) {
+            throw new IllegalArgumentException(
+                    "Only normal users can create a merchant profile"
             );
         }
 
@@ -107,6 +109,26 @@ public class MerchantService {
 
         Merchant savedMerchant =
                 merchantRepository.save(merchant);
+
+        // Promote user to MERCHANT
+        user.setRole(User.Role.MERCHANT);
+        userRepository.save(user);
+
+        auditLogService.recordBusinessEvent(
+                userId,
+                "MERCHANT_CREATED",
+                "MERCHANT",
+                String.valueOf(savedMerchant.getId()),
+                null,
+                String.format(
+                        "{\"businessName\":\"%s\",\"businessType\":\"%s\",\"status\":\"%s\"}",
+                        savedMerchant.getBusinessName(),
+                        savedMerchant.getBusinessType(),
+                        savedMerchant.getStatus()
+                ),
+                "Merchant profile created for business "
+                        + savedMerchant.getBusinessName()
+        );
 
         return MerchantResponse.from(savedMerchant);
     }
@@ -216,6 +238,21 @@ public class MerchantService {
                         paymentRequest
                 );
 
+        auditLogService.recordBusinessEvent(
+                userId,
+                "PAYMENT_REQUEST_CREATED",
+                "PAYMENT_REQUEST",
+                saved.getPaymentReference(),
+                null,
+                String.format(
+                        "{\"amount\":\"%s\",\"currency\":\"%s\",\"status\":\"%s\"}",
+                        saved.getAmount(),
+                        saved.getCurrency(),
+                        saved.getStatus()
+                ),
+                "Payment request created with reference "
+                        + saved.getPaymentReference()
+        );
         return MerchantPaymentResponse.from(saved);
     }
 
@@ -236,11 +273,18 @@ public class MerchantService {
                         .findByPaymentReference(
                                 request.paymentReference().trim()
                         )
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException(
-                                        "Payment request not found"
-                                )
-                        );
+                        .orElseThrow(() -> {
+
+                            String reason = "Payment request not found";
+
+                            recordMerchantPaymentFailure(
+                                    customerUserId,
+                                    request.paymentReference(),
+                                    reason
+                            );
+
+                            return new ResourceNotFoundException(reason);
+                        });
         //check idempotency key
         String idempotencyKey =
                 request.idempotencyKey().trim();
@@ -248,28 +292,49 @@ public class MerchantService {
         if (transactionRepository.existsByIdempotencyKey(
                 idempotencyKey
         )) {
-            throw new IllegalArgumentException(
-                    "Idempotency key has already been used"
+
+            String reason = "Idempotency key has already been used";
+
+            recordMerchantPaymentFailure(
+                    customerUserId,
+                    request.paymentReference(),
+                    reason
             );
+
+            throw new IllegalArgumentException(reason);
         }
 
         // 2. Payment request must still be pending
         if (paymentRequest.getStatus()
                 != PaymentRequest.Status.PENDING) {
 
-            throw new IllegalArgumentException(
-                    "Payment request is not available for payment"
+            String reason =
+                    "Payment request is not available for payment";
+
+            recordMerchantPaymentFailure(
+                    customerUserId,
+                    paymentRequest.getPaymentReference(),
+                    reason
             );
+
+            throw new IllegalArgumentException(reason);
         }
 
         // 3. Find customer account
         Account customerAccount =
                 accountRepository.findByUserId(customerUserId)
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException(
-                                        "Customer account not found"
-                                )
-                        );
+                        .orElseThrow(() -> {
+
+                            String reason = "Customer account not found";
+
+                            recordMerchantPaymentFailure(
+                                    customerUserId,
+                                    request.paymentReference(),
+                                    reason
+                            );
+
+                            return new ResourceNotFoundException(reason);
+                        });
 
         // 4. Find merchant account
         Long merchantUserId =
@@ -279,37 +344,65 @@ public class MerchantService {
 
         Account merchantAccount =
                 accountRepository.findByUserId(merchantUserId)
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException(
-                                        "Merchant account not found"
-                                )
-                        );
+                        .orElseThrow(() -> {
+
+                            String reason = "Merchant account not found";
+
+                            recordMerchantPaymentFailure(
+                                    customerUserId,
+                                    request.paymentReference(),
+                                    reason
+                            );
+
+                            return new ResourceNotFoundException(reason);
+                        });
 
         // 5. Prevent merchant from paying itself
         if (customerAccount.getId()
                 .equals(merchantAccount.getId())) {
 
-            throw new IllegalArgumentException(
-                    "Merchant cannot pay its own payment request"
+            String reason =
+                    "Merchant cannot pay its own payment request";
+
+            recordMerchantPaymentFailure(
+                    customerUserId,
+                    paymentRequest.getPaymentReference(),
+                    reason
             );
+
+            throw new IllegalArgumentException(reason);
         }
 
         // 6. Customer account must be active
         if (customerAccount.getStatus()
                 != Account.Status.ACTIVE) {
 
-            throw new IllegalArgumentException(
-                    "Customer account is not active"
+            String reason =
+                    "Customer account is not active";
+
+            recordMerchantPaymentFailure(
+                    customerUserId,
+                    paymentRequest.getPaymentReference(),
+                    reason
             );
+
+            throw new IllegalArgumentException(reason);
         }
 
         // 7. Merchant account must be active
         if (merchantAccount.getStatus()
                 != Account.Status.ACTIVE) {
 
-            throw new IllegalArgumentException(
-                    "Merchant account is not active"
+            String reason =
+                    "Merchant account is not active";
+
+            recordMerchantPaymentFailure(
+                    customerUserId,
+                    paymentRequest.getPaymentReference(),
+                    reason
             );
+
+            throw new IllegalArgumentException(reason);
         }
 
         // 8. Currency must match
@@ -318,9 +411,16 @@ public class MerchantService {
                         paymentRequest.getCurrency()
                 )) {
 
-            throw new IllegalArgumentException(
-                    "Customer account currency mismatch"
+            String reason =
+                    "Customer account currency mismatch";
+
+            recordMerchantPaymentFailure(
+                    customerUserId,
+                    paymentRequest.getPaymentReference(),
+                    reason
             );
+
+            throw new IllegalArgumentException(reason);
         }
 
         if (!merchantAccount.getCurrency()
@@ -328,20 +428,37 @@ public class MerchantService {
                         paymentRequest.getCurrency()
                 )) {
 
-            throw new IllegalArgumentException(
-                    "Merchant account currency mismatch"
+            String reason =
+                    "Merchant account currency mismatch";
+
+            recordMerchantPaymentFailure(
+                    customerUserId,
+                    paymentRequest.getPaymentReference(),
+                    reason
             );
+
+            throw new IllegalArgumentException(reason);
         }
 
         // 9. Check customer balance
         if (customerAccount.getBalance()
                 .compareTo(paymentRequest.getAmount()) < 0) {
 
-            throw new IllegalArgumentException(
-                    "Insufficient balance"
-            );
-        }
+            String reason = "Insufficient balance";
 
+            recordMerchantPaymentFailure(
+                    customerUserId,
+                    paymentRequest.getPaymentReference(),
+                    reason
+            );
+
+            throw new IllegalArgumentException(reason);
+        }
+        BigDecimal customerBalanceBefore =
+                customerAccount.getBalance();
+
+        BigDecimal merchantBalanceBefore =
+                merchantAccount.getBalance();
         // 10. Debit customer
         customerAccount.setBalance(
                 customerAccount.getBalance()
@@ -398,7 +515,31 @@ public class MerchantService {
                 paymentRequestRepository.save(
                         paymentRequest
                 );
+        String oldValue = String.format(
+                "{\"customerBalance\":\"%s\",\"merchantBalance\":\"%s\",\"paymentStatus\":\"PENDING\"}",
+                customerBalanceBefore,
+                merchantBalanceBefore
+        );
 
+        String newValue = String.format(
+                "{\"customerBalance\":\"%s\",\"merchantBalance\":\"%s\",\"paymentStatus\":\"PAID\"}",
+                customerAccount.getBalance(),
+                merchantAccount.getBalance()
+        );
+
+        auditLogService.recordBusinessEvent(
+                customerUserId,
+                "MERCHANT_PAYMENT_SUCCESS",
+                "PAYMENT_REQUEST",
+                savedPaymentRequest.getPaymentReference(),
+                oldValue,
+                newValue,
+                String.format(
+                        "Merchant payment of INR %s completed for payment %s",
+                        savedPaymentRequest.getAmount(),
+                        savedPaymentRequest.getPaymentReference()
+                )
+        );
         // 17. Return response
         return MerchantPaymentResponse.from(
                 savedPaymentRequest
@@ -529,11 +670,16 @@ public class MerchantService {
     }
     //block merchant
     @Transactional
-    public AdminMerchantResponse blockMerchant(Long id) {
+    public AdminMerchantResponse blockMerchant(
+            Long id,
+            Long adminId
+    ) {
 
         Merchant merchant = merchantRepository.findById(id)
                 .orElseThrow(() ->
-                        new ResourceNotFoundException("Merchant not found")
+                        new ResourceNotFoundException(
+                                "Merchant not found"
+                        )
                 );
 
         if (merchant.getStatus() == Merchant.Status.BLOCKED) {
@@ -542,19 +688,43 @@ public class MerchantService {
             );
         }
 
+        Merchant.Status oldStatus =
+                merchant.getStatus();
+
         merchant.setStatus(Merchant.Status.BLOCKED);
 
-        return AdminMerchantResponse.from(
-                merchantRepository.save(merchant)
+        Merchant savedMerchant =
+                merchantRepository.save(merchant);
+
+        auditLogService.recordBusinessEvent(
+                adminId,
+                "MERCHANT_BLOCKED",
+                "MERCHANT",
+                String.valueOf(savedMerchant.getId()),
+                String.format(
+                        "{\"status\":\"%s\"}",
+                        oldStatus
+                ),
+                "{\"status\":\"BLOCKED\"}",
+                "Merchant "
+                        + savedMerchant.getBusinessName()
+                        + " was blocked"
         );
+
+        return AdminMerchantResponse.from(savedMerchant);
     }
     //suspend merchant
     @Transactional
-    public AdminMerchantResponse suspendMerchant(Long id) {
+    public AdminMerchantResponse suspendMerchant(
+            Long id,
+            Long adminId
+    ) {
 
         Merchant merchant = merchantRepository.findById(id)
                 .orElseThrow(() ->
-                        new ResourceNotFoundException("Merchant not found")
+                        new ResourceNotFoundException(
+                                "Merchant not found"
+                        )
                 );
 
         if (merchant.getStatus() == Merchant.Status.SUSPENDED) {
@@ -563,19 +733,43 @@ public class MerchantService {
             );
         }
 
+        Merchant.Status oldStatus =
+                merchant.getStatus();
+
         merchant.setStatus(Merchant.Status.SUSPENDED);
 
-        return AdminMerchantResponse.from(
-                merchantRepository.save(merchant)
+        Merchant savedMerchant =
+                merchantRepository.save(merchant);
+
+        auditLogService.recordBusinessEvent(
+                adminId,
+                "MERCHANT_SUSPENDED",
+                "MERCHANT",
+                String.valueOf(savedMerchant.getId()),
+                String.format(
+                        "{\"status\":\"%s\"}",
+                        oldStatus
+                ),
+                "{\"status\":\"SUSPENDED\"}",
+                "Merchant "
+                        + savedMerchant.getBusinessName()
+                        + " was suspended"
         );
+
+        return AdminMerchantResponse.from(savedMerchant);
     }
     //activate
     @Transactional
-    public AdminMerchantResponse activateMerchant(Long id) {
+    public AdminMerchantResponse activateMerchant(
+            Long id,
+            Long adminId
+    ) {
 
         Merchant merchant = merchantRepository.findById(id)
                 .orElseThrow(() ->
-                        new ResourceNotFoundException("Merchant not found")
+                        new ResourceNotFoundException(
+                                "Merchant not found"
+                        )
                 );
 
         if (merchant.getStatus() == Merchant.Status.ACTIVE) {
@@ -584,10 +778,44 @@ public class MerchantService {
             );
         }
 
+        Merchant.Status oldStatus =
+                merchant.getStatus();
+
         merchant.setStatus(Merchant.Status.ACTIVE);
 
-        return AdminMerchantResponse.from(
-                merchantRepository.save(merchant)
+        Merchant savedMerchant =
+                merchantRepository.save(merchant);
+
+        auditLogService.recordBusinessEvent(
+                adminId,
+                "MERCHANT_ACTIVATED",
+                "MERCHANT",
+                String.valueOf(savedMerchant.getId()),
+                String.format(
+                        "{\"status\":\"%s\"}",
+                        oldStatus
+                ),
+                "{\"status\":\"ACTIVE\"}",
+                "Merchant "
+                        + savedMerchant.getBusinessName()
+                        + " was activated"
+        );
+
+        return AdminMerchantResponse.from(savedMerchant);
+    }
+    private void recordMerchantPaymentFailure(
+            Long customerUserId,
+            String paymentReference,
+            String reason
+    ) {
+
+        auditLogService.recordBusinessFailure(
+                customerUserId,
+                "MERCHANT_PAYMENT_FAILED",
+                "PAYMENT_REQUEST",
+                paymentReference,
+                "Merchant payment failed",
+                reason
         );
     }
 }

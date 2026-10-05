@@ -32,11 +32,13 @@ public class AdminService {
     private final AccountRepository accountRepository;
     private final MerchantRepository merchantRepository;
     private final TransactionRepository transactionRepository;
-    public AdminService(UserRepository userRepository, AccountRepository accountRepository, MerchantRepository merchantRepository, TransactionRepository transactionRepository) {
+    private final AuditLogService auditLogService;
+    public AdminService(UserRepository userRepository, AccountRepository accountRepository, MerchantRepository merchantRepository, TransactionRepository transactionRepository, AuditLogService auditLogService) {
         this.userRepository = userRepository;
         this.accountRepository = accountRepository;
         this.merchantRepository = merchantRepository;
         this.transactionRepository = transactionRepository;
+        this.auditLogService = auditLogService;
     }
 
     // =========================================================
