@@ -96,9 +96,9 @@ public class MerchantController {
     }
 
     // =========================================================
-// PAY MERCHANT PAYMENT REQUEST
-// POST /api/merchant/payments/pay
-// =========================================================
+    // PAY MERCHANT PAYMENT REQUEST
+    // POST /api/merchant/payments/pay
+    // =========================================================
 
     @PostMapping("/payments/pay")
     public ResponseEntity<MerchantPaymentResponse> payPaymentRequest(

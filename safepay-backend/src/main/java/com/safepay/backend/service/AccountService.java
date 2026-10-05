@@ -177,32 +177,82 @@ public class AccountService {
                 .toList();
     }
     @Transactional
-    public AdminAccountResponse blockAccount(Long accountId) {
+    public AdminAccountResponse blockAccount(
+            Long accountId,
+            Long adminId
+    ) {
 
         Account account = accountRepository.findById(accountId)
-                .orElseThrow(() -> new ResourceNotFoundException("Account not found"));
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Account not found")
+                );
 
         if (account.getStatus() == Account.Status.CLOSED) {
-            throw new IllegalArgumentException("Closed account cannot be blocked");
+            throw new IllegalArgumentException(
+                    "Closed account cannot be blocked"
+            );
         }
+
+        Account.Status oldStatus = account.getStatus();
 
         account.setStatus(Account.Status.BLOCKED);
 
-        return AdminAccountResponse.from(accountRepository.save(account));
+        Account savedAccount =
+                accountRepository.save(account);
+
+        auditLogService.recordBusinessEvent(
+                adminId,
+                "ACCOUNT_BLOCKED",
+                "ACCOUNT",
+                String.valueOf(savedAccount.getId()),
+                String.format(
+                        "{\"status\":\"%s\"}",
+                        oldStatus
+                ),
+                "{\"status\":\"BLOCKED\"}",
+                "Account was blocked"
+        );
+
+        return AdminAccountResponse.from(savedAccount);
     }
     @Transactional
-    public AdminAccountResponse unblockAccount(Long accountId) {
+    public AdminAccountResponse unblockAccount(
+            Long accountId,
+            Long adminId
+    ) {
 
         Account account = accountRepository.findById(accountId)
-                .orElseThrow(() -> new ResourceNotFoundException("Account not found"));
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Account not found")
+                );
 
         if (account.getStatus() == Account.Status.CLOSED) {
-            throw new IllegalArgumentException("Closed account cannot be unblocked");
+            throw new IllegalArgumentException(
+                    "Closed account cannot be unblocked"
+            );
         }
+
+        Account.Status oldStatus = account.getStatus();
 
         account.setStatus(Account.Status.ACTIVE);
 
-        return AdminAccountResponse.from(accountRepository.save(account));
+        Account savedAccount =
+                accountRepository.save(account);
+
+        auditLogService.recordBusinessEvent(
+                adminId,
+                "ACCOUNT_UNBLOCKED",
+                "ACCOUNT",
+                String.valueOf(savedAccount.getId()),
+                String.format(
+                        "{\"status\":\"%s\"}",
+                        oldStatus
+                ),
+                "{\"status\":\"ACTIVE\"}",
+                "Account was unblocked"
+        );
+
+        return AdminAccountResponse.from(savedAccount);
     }
     private String maskAccountNumber(String accountNumber) {
 

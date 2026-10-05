@@ -169,20 +169,32 @@ public class AdminController {
     }
     @PatchMapping("/accounts/{id}/block")
     public ResponseEntity<AdminAccountResponse> blockAccount(
-            @PathVariable Long id
+            @PathVariable Long id,
+            @AuthenticationPrincipal Jwt jwt
     ) {
 
+        Long adminId = Long.valueOf(jwt.getSubject());
+
         return ResponseEntity.ok(
-                accountService.blockAccount(id)
+                accountService.blockAccount(
+                        id,
+                        adminId
+                )
         );
     }
     @PatchMapping("/accounts/{id}/unblock")
     public ResponseEntity<AdminAccountResponse> unblockAccount(
-            @PathVariable Long id
+            @PathVariable Long id,
+            @AuthenticationPrincipal Jwt jwt
     ) {
 
+        Long adminId = Long.valueOf(jwt.getSubject());
+
         return ResponseEntity.ok(
-                accountService.unblockAccount(id)
+                accountService.unblockAccount(
+                        id,
+                        adminId
+                )
         );
     }
     //get all merchants

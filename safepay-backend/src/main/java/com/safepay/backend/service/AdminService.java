@@ -75,11 +75,26 @@ public class AdminService {
 
         validateAdminAction(user, adminId);
 
+        User.Status oldStatus = user.getStatus();
+
         user.setStatus(User.Status.BLOCKED);
 
-        return AdminUserResponse.from(
-                userRepository.save(user)
+        User savedUser = userRepository.save(user);
+
+        auditLogService.recordBusinessEvent(
+                adminId,
+                "USER_BLOCKED",
+                "USER",
+                String.valueOf(savedUser.getId()),
+                String.format(
+                        "{\"status\":\"%s\"}",
+                        oldStatus
+                ),
+                "{\"status\":\"BLOCKED\"}",
+                "User " + savedUser.getEmail() + " was blocked"
         );
+
+        return AdminUserResponse.from(savedUser);
     }
 
     // =========================================================
@@ -93,11 +108,26 @@ public class AdminService {
 
         validateAdminAction(user, adminId);
 
+        User.Status oldStatus = user.getStatus();
+
         user.setStatus(User.Status.SUSPENDED);
 
-        return AdminUserResponse.from(
-                userRepository.save(user)
+        User savedUser = userRepository.save(user);
+
+        auditLogService.recordBusinessEvent(
+                adminId,
+                "USER_SUSPENDED",
+                "USER",
+                String.valueOf(savedUser.getId()),
+                String.format(
+                        "{\"status\":\"%s\"}",
+                        oldStatus
+                ),
+                "{\"status\":\"SUSPENDED\"}",
+                "User " + savedUser.getEmail() + " was suspended"
         );
+
+        return AdminUserResponse.from(savedUser);
     }
 
     // =========================================================
@@ -111,11 +141,26 @@ public class AdminService {
 
         validateAdminAction(user, adminId);
 
+        User.Status oldStatus = user.getStatus();
+
         user.setStatus(User.Status.ACTIVE);
 
-        return AdminUserResponse.from(
-                userRepository.save(user)
+        User savedUser = userRepository.save(user);
+
+        auditLogService.recordBusinessEvent(
+                adminId,
+                "USER_ACTIVATED",
+                "USER",
+                String.valueOf(savedUser.getId()),
+                String.format(
+                        "{\"status\":\"%s\"}",
+                        oldStatus
+                ),
+                "{\"status\":\"ACTIVE\"}",
+                "User " + savedUser.getEmail() + " was activated"
         );
+
+        return AdminUserResponse.from(savedUser);
     }
 
     // =========================================================

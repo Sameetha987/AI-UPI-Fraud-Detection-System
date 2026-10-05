@@ -23,16 +23,17 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final SecureRandom secureRandom = new SecureRandom();
-
+    private final AuditLogService auditLogService;
     public AuthService(
             UserRepository userRepository,
             AccountRepository accountRepository,
-            PasswordEncoder passwordEncoder, JwtService jwtService
+            PasswordEncoder passwordEncoder, JwtService jwtService, AuditLogService auditLogService
     ) {
         this.userRepository = userRepository;
         this.accountRepository = accountRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
@@ -42,11 +43,35 @@ public class AuthService {
         String phone = request.getPhone().trim();
 
         if (userRepository.existsByEmail(email)) {
-            throw new IllegalArgumentException("Email is already registered");
+
+            String reason = "Email is already registered";
+
+            auditLogService.recordBusinessFailure(
+                    null,
+                    "REGISTRATION_FAILED",
+                    "USER",
+                    null,
+                    "User registration failed",
+                    reason
+            );
+
+            throw new IllegalArgumentException(reason);
         }
 
         if (userRepository.existsByPhone(phone)) {
-            throw new IllegalArgumentException("Phone number is already registered");
+
+            String reason = "Phone number is already registered";
+
+            auditLogService.recordBusinessFailure(
+                    null,
+                    "REGISTRATION_FAILED",
+                    "USER",
+                    null,
+                    "User registration failed",
+                    reason
+            );
+
+            throw new IllegalArgumentException(reason);
         }
 
         User user = new User();
@@ -76,6 +101,20 @@ public class AuthService {
         account.setStatus(Account.Status.ACTIVE);
 
         Account savedAccount = accountRepository.save(account);
+
+        auditLogService.recordBusinessEvent(
+                savedUser.getId(),
+                "USER_REGISTERED",
+                "USER",
+                String.valueOf(savedUser.getId()),
+                null,
+                String.format(
+                        "{\"status\":\"%s\",\"role\":\"%s\"}",
+                        savedUser.getStatus(),
+                        savedUser.getRole()
+                ),
+                "User registered successfully"
+        );
 
         return new RegisterResponse(
                 savedUser.getId(),
@@ -109,25 +148,75 @@ public class AuthService {
 
         User user = userRepository
                 .findByEmail(request.email())
-                .orElseThrow(() ->
-                        new RuntimeException("Invalid email or password")
-                );
+                .orElseThrow(() -> {
+
+                    String reason = "Invalid email or password";
+
+                    auditLogService.recordBusinessFailure(
+                            null,
+                            "LOGIN_FAILED",
+                            "USER",
+                            null,
+                            "Login failed",
+                            reason
+                    );
+
+                    return new RuntimeException(reason);
+                });
 
         if (user.getStatus() != User.Status.ACTIVE) {
-            throw new RuntimeException("User account is not active");
+
+            String reason = "User account is not active";
+
+            auditLogService.recordBusinessFailure(
+                    user.getId(),
+                    "LOGIN_FAILED",
+                    "USER",
+                    String.valueOf(user.getId()),
+                    "Login failed",
+                    reason
+            );
+
+            throw new RuntimeException(reason);
         }
 
         if (!passwordEncoder.matches(
                 request.password(),
                 user.getPasswordHash()
         )) {
-            throw new RuntimeException("Invalid email or password");
+
+            String reason = "Invalid email or password";
+
+            auditLogService.recordBusinessFailure(
+                    user.getId(),
+                    "LOGIN_FAILED",
+                    "USER",
+                    String.valueOf(user.getId()),
+                    "Login failed",
+                    reason
+            );
+
+            throw new RuntimeException(reason);
         }
 
         String token = jwtService.generateToken(
                 user.getId(),
                 user.getEmail(),
                 user.getRole().name()
+        );
+
+        auditLogService.recordBusinessEvent(
+                user.getId(),
+                "LOGIN_SUCCESS",
+                "USER",
+                String.valueOf(user.getId()),
+                null,
+                String.format(
+                        "{\"status\":\"%s\",\"role\":\"%s\"}",
+                        user.getStatus(),
+                        user.getRole()
+                ),
+                "User logged in successfully"
         );
 
         return new LoginResponse(
