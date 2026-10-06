@@ -6,45 +6,29 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
 public class SecurityConfig {
+
     private final AuditAuthenticationEntryPoint auditAuthenticationEntryPoint;
     private final AuditAccessDeniedHandler auditAccessDeniedHandler;
+    private final DatabaseUserStatusJwtAuthenticationConverter
+            jwtAuthenticationConverter;
 
-    public SecurityConfig(AuditAuthenticationEntryPoint auditAuthenticationEntryPoint, AuditAccessDeniedHandler auditAccessDeniedHandler) {
+    public SecurityConfig(
+            AuditAuthenticationEntryPoint auditAuthenticationEntryPoint,
+            AuditAccessDeniedHandler auditAccessDeniedHandler,
+            DatabaseUserStatusJwtAuthenticationConverter jwtAuthenticationConverter
+    ) {
         this.auditAuthenticationEntryPoint = auditAuthenticationEntryPoint;
         this.auditAccessDeniedHandler = auditAccessDeniedHandler;
+        this.jwtAuthenticationConverter = jwtAuthenticationConverter;
     }
 
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
-    }
-
-    @Bean
-    public JwtAuthenticationConverter jwtAuthenticationConverter() {
-
-        JwtAuthenticationConverter converter =
-                new JwtAuthenticationConverter();
-
-        converter.setJwtGrantedAuthoritiesConverter(jwt -> {
-
-            String role = jwt.getClaimAsString("role");
-
-            if (role == null || role.isBlank()) {
-                return java.util.List.of();
-            }
-
-            return java.util.List.of(
-                    new SimpleGrantedAuthority("ROLE_" + role)
-            );
-        });
-
-        return converter;
     }
 
     @Bean
@@ -72,6 +56,7 @@ public class SecurityConfig {
                         // Admin APIs
                         .requestMatchers("/api/admin/**")
                         .hasRole("ADMIN")
+
                         // Create merchant profile
                         .requestMatchers("/api/merchant/profile")
                         .authenticated()
@@ -83,9 +68,11 @@ public class SecurityConfig {
                         // Merchant APIs
                         .requestMatchers("/api/merchant/**")
                         .hasRole("MERCHANT")
+
                         // Everything else requires authentication
                         .anyRequest().authenticated()
                 )
+
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(
                                 auditAuthenticationEntryPoint
@@ -94,14 +81,14 @@ public class SecurityConfig {
                                 auditAccessDeniedHandler
                         )
                 )
+
                 .oauth2ResourceServer(oauth2 ->
                         oauth2.jwt(jwt ->
                                 jwt.jwtAuthenticationConverter(
-                                        jwtAuthenticationConverter()
+                                        jwtAuthenticationConverter
                                 )
                         )
                 );
-
 
         return http.build();
     }
