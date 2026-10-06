@@ -14,6 +14,8 @@ import com.safepay.backend.exception.TransactionNotFoundException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import org.springframework.data.domain.Pageable;
+
+import java.util.List;
 import java.util.UUID;
 import java.time.LocalDate;
 import com.safepay.backend.exception.ResourceNotFoundException;
@@ -98,6 +100,33 @@ public class TransactionService {
                     "Cannot transfer money to your own account"
             );
         }
+
+        //TO lock accounts for atomicity (race-condition)
+        List<Account> lockedAccounts =
+                accountRepository.findAllByIdsForUpdate(
+                        List.of(
+                                senderAccount.getId(),
+                                receiverAccount.getId()
+                        )
+                );
+
+        if (lockedAccounts.size() != 2) {
+            throw new ResourceNotFoundException(
+                    "Unable to lock transfer accounts"
+            );
+        }
+
+        Account lockedSender = lockedAccounts.stream()
+                .filter(account -> account.getId().equals(senderAccount.getId()))
+                .findFirst()
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Sender account not found"));
+
+        Account lockedReceiver = lockedAccounts.stream()
+                .filter(account -> account.getId().equals(receiverAccount.getId()))
+                .findFirst()
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Receiver account not found"));
 
 
         // =====================================================
