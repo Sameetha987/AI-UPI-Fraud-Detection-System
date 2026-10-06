@@ -3,6 +3,7 @@ package com.safepay.backend.entity;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import org.hibernate.annotations.Check;
 
 @Entity
 @Table(
@@ -36,6 +37,7 @@ public class Transaction {
     )
     private Account receiverAccount;
 
+    @Check(constraints = "amount > 0")
     @Column(
             nullable = false,
             precision = 19,
