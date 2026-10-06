@@ -49,7 +49,7 @@ public class TransactionService {
                 && !request.idempotencyKey().isBlank()) {
 
             var existingTransaction =
-                    transactionRepository.findByIdempotencyKey(
+                    transactionRepository.findByIdempotencyKeyForUpdate(
                             request.idempotencyKey()
                     );
 

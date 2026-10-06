@@ -1,9 +1,11 @@
 package com.safepay.backend.repository;
 
 import com.safepay.backend.entity.Transaction;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import java.time.LocalDateTime;
@@ -16,8 +18,14 @@ public interface TransactionRepository
             String transactionReference
     );
 
-    Optional<Transaction> findByIdempotencyKey(
-            String idempotencyKey
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT t
+        FROM Transaction t
+        WHERE t.idempotencyKey = :idempotencyKey
+        """)
+    Optional<Transaction> findByIdempotencyKeyForUpdate(
+            @Param("idempotencyKey") String idempotencyKey
     );
 
     boolean existsByIdempotencyKey(
