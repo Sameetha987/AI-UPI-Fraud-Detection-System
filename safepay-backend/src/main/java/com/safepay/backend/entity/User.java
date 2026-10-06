@@ -43,6 +43,15 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    @Column(name = "token_version", nullable = false)
+    private Integer tokenVersion = 0;
+
+    @Column(name = "failed_login_attempts", nullable = false)
+    private Integer failedLoginAttempts = 0;
+
+    @Column(name = "locked_until")
+    private LocalDateTime lockedUntil;
+
     @PrePersist
     protected void onCreate() {
         LocalDateTime now = LocalDateTime.now();
@@ -129,5 +138,29 @@ public class User {
 
     public LocalDateTime getUpdatedAt() {
         return updatedAt;
+    }
+
+    public Integer getTokenVersion() {
+        return tokenVersion;
+    }
+
+    public void setTokenVersion(Integer tokenVersion) {
+        this.tokenVersion = tokenVersion;
+    }
+
+    public Integer getFailedLoginAttempts() {
+        return failedLoginAttempts;
+    }
+
+    public void setFailedLoginAttempts(Integer failedLoginAttempts) {
+        this.failedLoginAttempts = failedLoginAttempts;
+    }
+
+    public LocalDateTime getLockedUntil() {
+        return lockedUntil;
+    }
+
+    public void setLockedUntil(LocalDateTime lockedUntil) {
+        this.lockedUntil = lockedUntil;
     }
 }

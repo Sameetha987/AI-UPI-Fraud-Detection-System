@@ -78,6 +78,7 @@ public class AdminService {
         User.Status oldStatus = user.getStatus();
 
         user.setStatus(User.Status.BLOCKED);
+        user.setTokenVersion(user.getTokenVersion() + 1);
 
         User savedUser = userRepository.save(user);
 
@@ -111,6 +112,7 @@ public class AdminService {
         User.Status oldStatus = user.getStatus();
 
         user.setStatus(User.Status.SUSPENDED);
+        user.setTokenVersion(user.getTokenVersion() + 1);
 
         User savedUser = userRepository.save(user);
 

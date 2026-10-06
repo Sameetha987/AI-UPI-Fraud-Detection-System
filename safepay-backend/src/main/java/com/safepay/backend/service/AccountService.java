@@ -1,5 +1,6 @@
 package com.safepay.backend.service;
 
+import com.safepay.backend.dto.AccountResponse;
 import com.safepay.backend.dto.AdminAccountResponse;
 import com.safepay.backend.dto.DepositRequest;
 import com.safepay.backend.dto.DepositResponse;
@@ -264,5 +265,16 @@ public class AccountService {
                 accountNumber.substring(
                         accountNumber.length() - 4
                 );
+    }
+    @Transactional(readOnly = true)
+    public AccountResponse getMyAccount(Long userId) {
+
+        Account account = accountRepository
+                .findByUserId(userId)
+                .orElseThrow(() ->
+                        new RuntimeException("Account not found")
+                );
+
+        return AccountResponse.from(account);
     }
 }

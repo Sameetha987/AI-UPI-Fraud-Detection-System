@@ -10,13 +10,13 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.Map;
-
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<Map<String, String>> handleIllegalArgument(
-            IllegalArgumentException exception,
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<Map<String, String>>
+    handleRuntimeException(
+            RuntimeException exception,
             HttpServletRequest request
     ) {
 
@@ -25,11 +25,16 @@ public class GlobalExceptionHandler {
                 exception.getMessage()
         );
 
-        Map<String, String> response = new HashMap<>();
-        response.put("error", exception.getMessage());
+        Map<String, String> response =
+                new HashMap<>();
+
+        response.put(
+                "error",
+                "An unexpected error occurred"
+        );
 
         return ResponseEntity
-                .status(HttpStatus.BAD_REQUEST)
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(response);
     }
 
@@ -50,12 +55,13 @@ public class GlobalExceptionHandler {
                         )
                 );
 
-        // Create a single readable message for the audit log
         String errorMessage = exception.getBindingResult()
                 .getFieldErrors()
                 .stream()
                 .map(error ->
-                        error.getField() + ": " + error.getDefaultMessage()
+                        error.getField()
+                                + ": "
+                                + error.getDefaultMessage()
                 )
                 .findFirst()
                 .orElse("Validation failed");
@@ -70,25 +76,6 @@ public class GlobalExceptionHandler {
                 .body(errors);
     }
 
-    @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<Map<String, String>> handleRuntimeException(
-            RuntimeException exception,
-            HttpServletRequest request
-    ) {
-
-        request.setAttribute(
-                "auditErrorMessage",
-                exception.getMessage()
-        );
-
-        Map<String, String> response = new HashMap<>();
-
-        response.put("error", exception.getMessage());
-
-        return ResponseEntity
-                .status(HttpStatus.BAD_REQUEST)
-                .body(response);
-    }
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleResourceNotFound(
             ResourceNotFoundException exception,
@@ -100,8 +87,13 @@ public class GlobalExceptionHandler {
                 exception.getMessage()
         );
 
-        Map<String, String> response = new HashMap<>();
-        response.put("error", exception.getMessage());
+        Map<String, String> response =
+                new HashMap<>();
+
+        response.put(
+                "error",
+                exception.getMessage()
+        );
 
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)

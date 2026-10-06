@@ -68,6 +68,7 @@ public class Transaction {
 
     @Column(
             name = "idempotency_key",
+            nullable = false,
             unique = true,
             length = 100
     )

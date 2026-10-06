@@ -16,14 +16,11 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/accounts")
 public class AccountController {
 
-    private final AccountRepository accountRepository;
     private final AccountService accountService;
 
     public AccountController(
-            AccountRepository accountRepository,
             AccountService accountService
     ) {
-        this.accountRepository = accountRepository;
         this.accountService = accountService;
     }
 
@@ -39,16 +36,9 @@ public class AccountController {
 
         Long userId = Long.valueOf(jwt.getSubject());
 
-        Account account = accountRepository
-                .findByUserId(userId)
-                .orElseThrow(() ->
-                        new RuntimeException("Account not found")
-                );
-
-        AccountResponse response =
-                AccountResponse.from(account);
-
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(
+                accountService.getMyAccount(userId)
+        );
     }
 
 

@@ -26,6 +26,10 @@ public class DatabaseUserStatusJwtAuthenticationConverter
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
 
+        // =========================================================
+        // GET USER ID FROM JWT
+        // =========================================================
+
         String subject = jwt.getSubject();
 
         if (subject == null || subject.isBlank()) {
@@ -44,6 +48,10 @@ public class DatabaseUserStatusJwtAuthenticationConverter
             );
         }
 
+        // =========================================================
+        // LOAD CURRENT USER FROM DATABASE
+        // =========================================================
+
         User user = userRepository.findById(userId)
                 .orElseThrow(() ->
                         new AuthenticationServiceException(
@@ -51,19 +59,38 @@ public class DatabaseUserStatusJwtAuthenticationConverter
                         )
                 );
 
+        // =========================================================
+        // CHECK CURRENT ACCOUNT STATUS
+        // =========================================================
+
         if (user.getStatus() != User.Status.ACTIVE) {
             throw new AuthenticationServiceException(
                     "User account is not active"
             );
         }
 
-        String role = jwt.getClaimAsString("role");
+        // =========================================================
+        // CHECK TOKEN VERSION
+        // =========================================================
 
-        if (role == null || role.isBlank()) {
+        Number tokenVersionClaim =
+                jwt.getClaim("tokenVersion");
+
+        if (tokenVersionClaim == null ||
+                tokenVersionClaim.intValue()
+                        != user.getTokenVersion()) {
+
             throw new AuthenticationServiceException(
-                    "User role is missing"
+                    "Token is no longer valid"
             );
         }
+
+        // =========================================================
+        // GET ROLE FROM DATABASE
+        // NEVER TRUST ROLE FROM JWT
+        // =========================================================
+
+        String role = user.getRole().name();
 
         List<org.springframework.security.core.GrantedAuthority> authorities =
                 List.of(
@@ -71,6 +98,10 @@ public class DatabaseUserStatusJwtAuthenticationConverter
                                 "ROLE_" + role
                         )
                 );
+
+        // =========================================================
+        // CREATE AUTHENTICATION
+        // =========================================================
 
         return new JwtAuthenticationToken(
                 jwt,

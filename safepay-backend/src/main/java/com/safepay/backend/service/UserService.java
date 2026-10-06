@@ -86,6 +86,10 @@ public class UserService {
                 passwordEncoder.encode(request.newPassword())
         );
 
+        user.setTokenVersion(
+                user.getTokenVersion() + 1
+        );
+
         userRepository.save(user);
     }
 

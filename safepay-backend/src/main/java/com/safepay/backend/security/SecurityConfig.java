@@ -7,6 +7,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 
 @Configuration
 public class SecurityConfig {
@@ -39,37 +40,44 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable())
 
+                .cors(cors -> {})
+
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(
                                 SessionCreationPolicy.STATELESS
                         )
                 )
 
+                .headers(headers -> headers
+                        .contentTypeOptions(contentType -> {})
+                        .frameOptions(frame -> frame.deny())
+                        .referrerPolicy(referrer ->
+                                referrer.policy(
+                                        ReferrerPolicyHeaderWriter.ReferrerPolicy
+                                                .STRICT_ORIGIN_WHEN_CROSS_ORIGIN
+                                )
+                        )
+                )
+
                 .authorizeHttpRequests(auth -> auth
 
-                        // Public authentication APIs
                         .requestMatchers(
                                 "/api/auth/register",
                                 "/api/auth/login"
                         ).permitAll()
 
-                        // Admin APIs
                         .requestMatchers("/api/admin/**")
                         .hasRole("ADMIN")
 
-                        // Create merchant profile
                         .requestMatchers("/api/merchant/profile")
                         .authenticated()
 
-                        // Paying a merchant payment request
                         .requestMatchers("/api/merchant/payments/pay")
                         .authenticated()
 
-                        // Merchant APIs
                         .requestMatchers("/api/merchant/**")
                         .hasRole("MERCHANT")
 
-                        // Everything else requires authentication
                         .anyRequest().authenticated()
                 )
 

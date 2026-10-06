@@ -1,8 +1,8 @@
 package com.safepay.backend.security;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
@@ -25,7 +25,8 @@ public class JwtService {
     public String generateToken(
             Long userId,
             String email,
-            String role
+            String role,
+            Integer tokenVersion
     ) {
 
         Instant now = Instant.now();
@@ -37,6 +38,7 @@ public class JwtService {
                 .subject(String.valueOf(userId))
                 .claim("email", email)
                 .claim("role", role)
+                .claim("tokenVersion", tokenVersion)
                 .build();
 
         JwsHeader header = JwsHeader

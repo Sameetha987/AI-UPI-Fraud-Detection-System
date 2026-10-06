@@ -146,8 +146,20 @@ public class AuthService {
 
     public LoginResponse login(LoginRequest request) {
 
+        // =========================================================
+        // NORMALIZE EMAIL
+        // =========================================================
+
+        String email = request.email()
+                .trim()
+                .toLowerCase();
+
+        // =========================================================
+        // FIND USER
+        // =========================================================
+
         User user = userRepository
-                .findByEmail(request.email())
+                .findByEmail(email)
                 .orElseThrow(() -> {
 
                     String reason = "Invalid email or password";
@@ -161,12 +173,53 @@ public class AuthService {
                             reason
                     );
 
-                    return new RuntimeException(reason);
+                    return new IllegalArgumentException(
+                            "Invalid email or password"
+                    );
                 });
+
+        // =========================================================
+        // CHECK TEMPORARY LOGIN LOCK
+        // =========================================================
+
+        if (user.getLockedUntil() != null) {
+
+            if (user.getLockedUntil()
+                    .isAfter(java.time.LocalDateTime.now())) {
+
+                String reason =
+                        "Login temporarily locked";
+
+                auditLogService.recordBusinessFailure(
+                        user.getId(),
+                        "LOGIN_FAILED",
+                        "USER",
+                        String.valueOf(user.getId()),
+                        "Login failed",
+                        reason
+                );
+
+                // Do NOT reveal whether the account is locked.
+                throw new IllegalArgumentException(
+                        "Invalid email or password"
+                );
+            }
+
+            // Lock has expired.
+            user.setFailedLoginAttempts(0);
+            user.setLockedUntil(null);
+
+            userRepository.save(user);
+        }
+
+        // =========================================================
+        // CHECK ACCOUNT STATUS
+        // =========================================================
 
         if (user.getStatus() != User.Status.ACTIVE) {
 
-            String reason = "User account is not active";
+            String reason =
+                    "User account is not active";
 
             auditLogService.recordBusinessFailure(
                     user.getId(),
@@ -177,15 +230,40 @@ public class AuthService {
                     reason
             );
 
-            throw new RuntimeException(reason);
+            // Do NOT reveal account status.
+            throw new IllegalArgumentException(
+                    "Invalid email or password"
+            );
         }
+
+        // =========================================================
+        // CHECK PASSWORD
+        // =========================================================
 
         if (!passwordEncoder.matches(
                 request.password(),
                 user.getPasswordHash()
         )) {
 
-            String reason = "Invalid email or password";
+            int failedAttempts =
+                    user.getFailedLoginAttempts() + 1;
+
+            user.setFailedLoginAttempts(
+                    failedAttempts
+            );
+
+            if (failedAttempts >= 5) {
+
+                user.setLockedUntil(
+                        java.time.LocalDateTime.now()
+                                .plusMinutes(15)
+                );
+            }
+
+            userRepository.save(user);
+
+            String reason =
+                    "Invalid email or password";
 
             auditLogService.recordBusinessFailure(
                     user.getId(),
@@ -196,14 +274,34 @@ public class AuthService {
                     reason
             );
 
-            throw new RuntimeException(reason);
+            throw new IllegalArgumentException(
+                    "Invalid email or password"
+            );
         }
+
+        // =========================================================
+        // SUCCESSFUL LOGIN
+        // =========================================================
+
+        user.setFailedLoginAttempts(0);
+        user.setLockedUntil(null);
+
+        userRepository.save(user);
+
+        // =========================================================
+        // GENERATE JWT
+        // =========================================================
 
         String token = jwtService.generateToken(
                 user.getId(),
                 user.getEmail(),
-                user.getRole().name()
+                user.getRole().name(),
+                user.getTokenVersion()
         );
+
+        // =========================================================
+        // AUDIT SUCCESS
+        // =========================================================
 
         auditLogService.recordBusinessEvent(
                 user.getId(),
@@ -218,6 +316,10 @@ public class AuthService {
                 ),
                 "User logged in successfully"
         );
+
+        // =========================================================
+        // RESPONSE
+        // =========================================================
 
         return new LoginResponse(
                 token,

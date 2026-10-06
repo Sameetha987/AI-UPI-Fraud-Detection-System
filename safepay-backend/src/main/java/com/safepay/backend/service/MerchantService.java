@@ -267,11 +267,11 @@ public class MerchantService {
     ) {
 
 
-        // 1. Find payment request
+        // 1. Find and lock  payment request
         PaymentRequest paymentRequest =
                 paymentRequestRepository
-                        .findByPaymentReference(
-                                request.paymentReference().trim()
+                        .findByPaymentReferenceForUpdate(
+                                request.paymentReference()
                         )
                         .orElseThrow(() -> {
 
@@ -356,10 +356,49 @@ public class MerchantService {
 
                             return new ResourceNotFoundException(reason);
                         });
+        // =========================================================
+// LOCK CUSTOMER AND MERCHANT ACCOUNTS
+// =========================================================
+
+        List<Long> accountIds = List.of(
+                customerAccount.getId(),
+                merchantAccount.getId()
+        );
+
+        List<Account> lockedAccounts =
+                accountRepository.findAllByIdsForUpdate(
+                        accountIds
+                );
+
+        Account lockedCustomer =
+                lockedAccounts.stream()
+                        .filter(account ->
+                                account.getId()
+                                        .equals(customerAccount.getId())
+                        )
+                        .findFirst()
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Customer account not found"
+                                )
+                        );
+
+        Account lockedMerchant =
+                lockedAccounts.stream()
+                        .filter(account ->
+                                account.getId()
+                                        .equals(merchantAccount.getId())
+                        )
+                        .findFirst()
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Merchant account not found"
+                                )
+                        );
 
         // 5. Prevent merchant from paying itself
-        if (customerAccount.getId()
-                .equals(merchantAccount.getId())) {
+        if (lockedCustomer.getId()
+                .equals(lockedMerchant.getId())) {
 
             String reason =
                     "Merchant cannot pay its own payment request";
@@ -374,7 +413,7 @@ public class MerchantService {
         }
 
         // 6. Customer account must be active
-        if (customerAccount.getStatus()
+        if (lockedCustomer.getStatus()
                 != Account.Status.ACTIVE) {
 
             String reason =
@@ -390,7 +429,7 @@ public class MerchantService {
         }
 
         // 7. Merchant account must be active
-        if (merchantAccount.getStatus()
+        if (lockedMerchant.getStatus()
                 != Account.Status.ACTIVE) {
 
             String reason =
@@ -406,7 +445,7 @@ public class MerchantService {
         }
 
         // 8. Currency must match
-        if (!customerAccount.getCurrency()
+        if (!lockedCustomer.getCurrency()
                 .equalsIgnoreCase(
                         paymentRequest.getCurrency()
                 )) {
@@ -423,7 +462,7 @@ public class MerchantService {
             throw new IllegalArgumentException(reason);
         }
 
-        if (!merchantAccount.getCurrency()
+        if (!lockedMerchant.getCurrency()
                 .equalsIgnoreCase(
                         paymentRequest.getCurrency()
                 )) {
@@ -441,7 +480,7 @@ public class MerchantService {
         }
 
         // 9. Check customer balance
-        if (customerAccount.getBalance()
+        if (lockedCustomer.getBalance()
                 .compareTo(paymentRequest.getAmount()) < 0) {
 
             String reason = "Insufficient balance";
@@ -455,27 +494,53 @@ public class MerchantService {
             throw new IllegalArgumentException(reason);
         }
         BigDecimal customerBalanceBefore =
-                customerAccount.getBalance();
+                lockedCustomer.getBalance();
 
         BigDecimal merchantBalanceBefore =
-                merchantAccount.getBalance();
+                lockedMerchant.getBalance();
         // 10. Debit customer
-        customerAccount.setBalance(
-                customerAccount.getBalance()
+        lockedCustomer.setBalance(
+                lockedCustomer.getBalance()
                         .subtract(paymentRequest.getAmount())
         );
 
         // 11. Credit merchant
-        merchantAccount.setBalance(
-                merchantAccount.getBalance()
+        lockedMerchant.setBalance(
+                lockedMerchant.getBalance()
                         .add(paymentRequest.getAmount())
         );
+        // =========================================================
+// FINANCIAL INVARIANTS
+// =========================================================
+
+        if (lockedCustomer.getBalance()
+                .compareTo(BigDecimal.ZERO) < 0) {
+
+            throw new IllegalStateException(
+                    "Customer account balance cannot be negative"
+            );
+        }
+
+        BigDecimal beforeTotal =
+                customerBalanceBefore
+                        .add(merchantBalanceBefore);
+
+        BigDecimal afterTotal =
+                lockedCustomer.getBalance()
+                        .add(lockedMerchant.getBalance());
+
+        if (beforeTotal.compareTo(afterTotal) != 0) {
+
+            throw new IllegalStateException(
+                    "Financial invariant violated"
+            );
+        }
 
         // 12. Create transaction
         Transaction transaction = new Transaction();
 
-        transaction.setSenderAccount(customerAccount);
-        transaction.setReceiverAccount(merchantAccount);
+        transaction.setSenderAccount(lockedCustomer);
+        transaction.setReceiverAccount(lockedMerchant);
         transaction.setAmount(paymentRequest.getAmount());
         transaction.setCurrency(paymentRequest.getCurrency());
         transaction.setDescription(
@@ -504,8 +569,8 @@ public class MerchantService {
         );
 
         // 14. Save accounts
-        accountRepository.save(customerAccount);
-        accountRepository.save(merchantAccount);
+        accountRepository.save(lockedCustomer);
+        accountRepository.save(lockedMerchant);
 
         // 15. Save transaction
         transactionRepository.save(transaction);
@@ -523,8 +588,8 @@ public class MerchantService {
 
         String newValue = String.format(
                 "{\"customerBalance\":\"%s\",\"merchantBalance\":\"%s\",\"paymentStatus\":\"PAID\"}",
-                customerAccount.getBalance(),
-                merchantAccount.getBalance()
+                lockedCustomer.getBalance(),
+                lockedMerchant.getBalance()
         );
 
         auditLogService.recordBusinessEvent(
