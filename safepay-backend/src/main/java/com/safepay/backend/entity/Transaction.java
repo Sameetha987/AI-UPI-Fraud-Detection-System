@@ -181,4 +181,26 @@ public class Transaction {
     public void setCompletedAt(LocalDateTime completedAt) {
         this.completedAt = completedAt;
     }
+
+    public void markSuccess() {
+        if (this.status != Status.PENDING) {
+            throw new IllegalStateException(
+                    "Only a pending transaction can be marked successful"
+            );
+        }
+
+        this.status = Status.SUCCESS;
+        this.completedAt = LocalDateTime.now();
+    }
+
+    public void markFailed() {
+        if (this.status != Status.PENDING) {
+            throw new IllegalStateException(
+                    "Only a pending transaction can be marked failed"
+            );
+        }
+
+        this.status = Status.FAILED;
+        this.completedAt = LocalDateTime.now();
+    }
 }

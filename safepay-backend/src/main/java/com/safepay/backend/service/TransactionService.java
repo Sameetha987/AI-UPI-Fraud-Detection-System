@@ -290,13 +290,7 @@ public class TransactionService {
         // 12. MARK TRANSACTION SUCCESS
         // =====================================================
 
-        transaction.setStatus(
-                Transaction.Status.SUCCESS
-        );
-
-        transaction.setCompletedAt(
-                LocalDateTime.now()
-        );
+        transaction.markSuccess();
 
 
         // =====================================================
