@@ -77,7 +77,14 @@ public class TransactionService {
         // =====================================================
         // 3. FIND RECEIVER ACCOUNT
         // =====================================================
+        String receiverAccountNumber =
+                request.receiverAccountNumber().trim();
 
+        if (!receiverAccountNumber.matches("\\d{12}")) {
+            throw new IllegalArgumentException(
+                    "Receiver account number must be exactly 12 digits"
+            );
+        }
         Account receiverAccount =
                 accountRepository.findByAccountNumber(
                                 request.receiverAccountNumber().trim()
@@ -121,6 +128,19 @@ public class TransactionService {
                 .findFirst()
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Sender account not found"));
+
+        if (lockedSender.getUser() == null
+                || !lockedSender.getUser().getId().equals(senderUserId)) {
+
+            recordTransferFailure(
+                    senderUserId,
+                    "Sender account ownership validation failed"
+            );
+
+            throw new IllegalArgumentException(
+                    "Sender account does not belong to the authenticated user"
+            );
+        }
 
         Account lockedReceiver = lockedAccounts.stream()
                 .filter(account -> account.getId().equals(receiverAccount.getId()))
