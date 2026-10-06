@@ -4,6 +4,8 @@ import com.safepay.backend.dto.TransactionResponse;
 import com.safepay.backend.dto.TransferRequest;
 import com.safepay.backend.entity.Account;
 import com.safepay.backend.entity.Transaction;
+import com.safepay.backend.entity.User;
+import com.safepay.backend.exception.BusinessException;
 import com.safepay.backend.repository.AccountRepository;
 import com.safepay.backend.repository.TransactionRepository;
 import org.springframework.data.domain.Page;
@@ -103,7 +105,7 @@ public class TransactionService {
         if (senderAccount.getId()
                 .equals(receiverAccount.getId())) {
 
-            throw new RuntimeException(
+            throw new BusinessException(
                     "Cannot transfer money to your own account"
             );
         }
@@ -137,8 +139,8 @@ public class TransactionService {
                     "Sender account ownership validation failed"
             );
 
-            throw new IllegalArgumentException(
-                    "Sender account does not belong to the authenticated user"
+            throw new BusinessException(
+                    "Unable to process transfer"
             );
         }
 
@@ -152,6 +154,13 @@ public class TransactionService {
         // =====================================================
         // 5. CHECK ACCOUNT STATUS
         // =====================================================
+
+        if (lockedReceiver.getUser().getStatus() != User.Status.ACTIVE) {
+
+            throw new BusinessException(
+                    "Receiver user account is not active"
+            );
+        }
 
         if (lockedSender.getStatus() != Account.Status.ACTIVE) {
             throw new IllegalArgumentException("Sender account is not active");
@@ -240,7 +249,7 @@ public class TransactionService {
                     reason
             );
 
-            throw new RuntimeException(reason);
+            throw new BusinessException(reason);
         }
 
 

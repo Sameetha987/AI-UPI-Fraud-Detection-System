@@ -5,6 +5,7 @@ import com.safepay.backend.dto.AdminAccountResponse;
 import com.safepay.backend.dto.DepositRequest;
 import com.safepay.backend.dto.DepositResponse;
 import com.safepay.backend.entity.Account;
+import com.safepay.backend.exception.BusinessException;
 import com.safepay.backend.exception.ResourceNotFoundException;
 import com.safepay.backend.repository.AccountRepository;
 import org.springframework.stereotype.Service;
@@ -32,7 +33,7 @@ public class AccountService {
         Account account = accountRepository
                 .findByUserId(userId)
                 .orElseThrow(() ->
-                        new RuntimeException("Account not found")
+                        new ResourceNotFoundException("Account not found")
                 );
 
         // 2. Account must be active
@@ -49,7 +50,7 @@ public class AccountService {
                     reason
             );
 
-            throw new RuntimeException(reason);
+            throw new BusinessException(reason);
         }
 
         // 3. Currency must match
@@ -67,7 +68,7 @@ public class AccountService {
                     reason
             );
 
-            throw new RuntimeException(reason);
+            throw new BusinessException(reason);
         }
         if (request.amount() == null) {
 
@@ -272,7 +273,7 @@ public class AccountService {
         Account account = accountRepository
                 .findByUserId(userId)
                 .orElseThrow(() ->
-                        new RuntimeException("Account not found")
+                        new ResourceNotFoundException("Account not found")
                 );
 
         return AccountResponse.from(account);

@@ -1,5 +1,5 @@
 package com.safepay.backend.controller;
-
+import com.safepay.backend.exception.InvalidCredentialsException;
 import com.safepay.backend.exception.ResourceNotFoundException;
 import com.safepay.backend.service.AuditLogService;
 import org.springframework.http.HttpStatus;
@@ -7,12 +7,37 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import com.safepay.backend.exception.BusinessException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>>
+    handleIllegalArgumentException(
+            IllegalArgumentException exception,
+            HttpServletRequest request
+    ) {
+
+        request.setAttribute(
+                "auditErrorMessage",
+                exception.getMessage()
+        );
+
+        Map<String, String> response =
+                new HashMap<>();
+
+        response.put(
+                "error",
+                exception.getMessage()
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(response);
+    }
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, String>>
     handleRuntimeException(
@@ -97,6 +122,54 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
+                .body(response);
+    }
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<Map<String, String>>
+    handleInvalidCredentials(
+            InvalidCredentialsException exception,
+            HttpServletRequest request
+    ) {
+
+        request.setAttribute(
+                "auditErrorMessage",
+                exception.getMessage()
+        );
+
+        Map<String, String> response =
+                new HashMap<>();
+
+        response.put(
+                "error",
+                "Invalid email or password"
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .body(response);
+    }
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<Map<String, String>>
+    handleBusinessException(
+            BusinessException exception,
+            HttpServletRequest request
+    ) {
+
+        request.setAttribute(
+                "auditErrorMessage",
+                exception.getMessage()
+        );
+
+        Map<String, String> response =
+                new HashMap<>();
+
+        response.put(
+                "error",
+                exception.getMessage()
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
                 .body(response);
     }
 }

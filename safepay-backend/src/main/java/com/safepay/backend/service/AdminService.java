@@ -3,6 +3,7 @@ import com.safepay.backend.dto.AdminDashboardResponse;
 import com.safepay.backend.entity.Account;
 import com.safepay.backend.entity.Merchant;
 import com.safepay.backend.entity.Transaction;
+import com.safepay.backend.exception.ResourceNotFoundException;
 import com.safepay.backend.repository.AccountRepository;
 import com.safepay.backend.repository.MerchantRepository;
 import com.safepay.backend.repository.TransactionRepository;
@@ -173,7 +174,7 @@ public class AdminService {
 
         return userRepository.findById(id)
                 .orElseThrow(() ->
-                        new RuntimeException("User not found")
+                        new ResourceNotFoundException("User not found")
                 );
     }
 

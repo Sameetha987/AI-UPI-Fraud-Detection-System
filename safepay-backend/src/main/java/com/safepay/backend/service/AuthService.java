@@ -12,7 +12,7 @@ import com.safepay.backend.security.JwtService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import com.safepay.backend.exception.InvalidCredentialsException;
 import java.security.SecureRandom;
 
 @Service
@@ -173,7 +173,7 @@ public class AuthService {
                             reason
                     );
 
-                    return new IllegalArgumentException(
+                    return new InvalidCredentialsException(
                             "Invalid email or password"
                     );
                 });
@@ -200,7 +200,7 @@ public class AuthService {
                 );
 
                 // Do NOT reveal whether the account is locked.
-                throw new IllegalArgumentException(
+                throw new InvalidCredentialsException(
                         "Invalid email or password"
                 );
             }
@@ -231,7 +231,7 @@ public class AuthService {
             );
 
             // Do NOT reveal account status.
-            throw new IllegalArgumentException(
+            throw new InvalidCredentialsException(
                     "Invalid email or password"
             );
         }
@@ -274,7 +274,7 @@ public class AuthService {
                     reason
             );
 
-            throw new IllegalArgumentException(
+            throw new InvalidCredentialsException(
                     "Invalid email or password"
             );
         }
