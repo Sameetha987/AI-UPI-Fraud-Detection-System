@@ -87,7 +87,7 @@ public class TransactionService {
         }
         Account receiverAccount =
                 accountRepository.findByAccountNumber(
-                                request.receiverAccountNumber().trim()
+                                receiverAccountNumber
                         )
                         .orElseThrow(() ->
                                 new ResourceNotFoundException(
@@ -153,20 +153,12 @@ public class TransactionService {
         // 5. CHECK ACCOUNT STATUS
         // =====================================================
 
-        if (senderAccount.getStatus()
-                != Account.Status.ACTIVE) {
-
-            throw new RuntimeException(
-                    "Sender account is not active"
-            );
+        if (lockedSender.getStatus() != Account.Status.ACTIVE) {
+            throw new IllegalArgumentException("Sender account is not active");
         }
 
-        if (receiverAccount.getStatus()
-                != Account.Status.ACTIVE) {
-
-            throw new RuntimeException(
-                    "Receiver account is not active"
-            );
+        if (lockedReceiver.getStatus() != Account.Status.ACTIVE) {
+            throw new IllegalArgumentException("Receiver account is not active");
         }
 
 
@@ -192,7 +184,7 @@ public class TransactionService {
             );
         }
 
-        if (!senderAccount.getCurrency()
+        if (!lockedSender.getCurrency()
                 .equalsIgnoreCase(currency)) {
 
             throw new IllegalArgumentException(
@@ -200,7 +192,7 @@ public class TransactionService {
             );
         }
 
-        if (!receiverAccount.getCurrency()
+        if (!lockedReceiver.getCurrency()
                 .equalsIgnoreCase(currency)) {
 
             throw new IllegalArgumentException(
@@ -238,7 +230,7 @@ public class TransactionService {
         // 8. CHECK BALANCE
         // =====================================================
 
-        if (senderAccount.getBalance()
+        if (lockedSender.getBalance()
                 .compareTo(amount) < 0) {
 
             String reason = "Insufficient balance";
@@ -258,8 +250,8 @@ public class TransactionService {
 
         Transaction transaction = new Transaction();
 
-        transaction.setSenderAccount(senderAccount);
-        transaction.setReceiverAccount(receiverAccount);
+        transaction.setSenderAccount(lockedSender);
+        transaction.setReceiverAccount(lockedReceiver);
         transaction.setAmount(amount);
         transaction.setCurrency(currency);
         transaction.setDescription(
@@ -278,33 +270,68 @@ public class TransactionService {
         );
 
         BigDecimal senderBalanceBefore =
-                senderAccount.getBalance();
+                lockedSender.getBalance();
 
         BigDecimal receiverBalanceBefore =
-                receiverAccount.getBalance();
+                lockedReceiver.getBalance();
         // =====================================================
         // 10. DEBIT SENDER
         // =====================================================
 
-        senderAccount.setBalance(
-                senderAccount.getBalance()
+        lockedSender.setBalance(
+                lockedSender.getBalance()
                         .subtract(amount)
         );
+        if (lockedSender.getBalance().compareTo(BigDecimal.ZERO) < 0) {
+
+            String reason =
+                    "Financial invariant violated: sender balance became negative";
+
+            recordTransferFailure(senderUserId, reason);
+
+            throw new IllegalStateException(reason);
+        }
+
+
 
 
         // =====================================================
         // 11. CREDIT RECEIVER
         // =====================================================
 
-        receiverAccount.setBalance(
-                receiverAccount.getBalance()
+        lockedReceiver.setBalance(
+                lockedReceiver.getBalance()
                         .add(amount)
         );
+        if (lockedReceiver.getBalance().compareTo(BigDecimal.ZERO) < 0) {
+
+            String reason =
+                    "Financial invariant violated: receiver balance became negative";
+
+            recordTransferFailure(senderUserId, reason);
+
+            throw new IllegalStateException(reason);
+        }
         BigDecimal senderBalanceAfter =
-                senderAccount.getBalance();
+                lockedSender.getBalance();
 
         BigDecimal receiverBalanceAfter =
-                receiverAccount.getBalance();
+                lockedReceiver.getBalance();
+        BigDecimal totalBefore =
+                senderBalanceBefore.add(receiverBalanceBefore);
+
+        BigDecimal totalAfter =
+                senderBalanceAfter.add(receiverBalanceAfter);
+
+        if (totalBefore.compareTo(totalAfter) != 0) {
+
+            String reason =
+                    "Financial invariant violated: money conservation check failed";
+
+            recordTransferFailure(senderUserId, reason);
+
+            throw new IllegalStateException(reason);
+        }
 
         // =====================================================
         // 12. MARK TRANSACTION SUCCESS
@@ -317,8 +344,8 @@ public class TransactionService {
         // 13. SAVE ACCOUNTS
         // =====================================================
 
-        accountRepository.save(senderAccount);
-        accountRepository.save(receiverAccount);
+        accountRepository.save(lockedSender);
+        accountRepository.save(lockedReceiver);
 
 
         // =====================================================
@@ -471,14 +498,18 @@ public class TransactionService {
             Long senderUserId,
             String reason
     ) {
-
-        auditLogService.recordBusinessFailure(
-                senderUserId,
-                "TRANSFER_FAILED",
-                "TRANSACTION",
-                null,
-                "Transfer failed",
-                reason
-        );
+        try {
+            auditLogService.recordBusinessFailure(
+                    senderUserId,
+                    "TRANSFER_FAILED",
+                    "TRANSACTION",
+                    null,
+                    "Transfer failed",
+                    reason
+            );
+        } catch (Exception auditException) {
+            // Do not replace the original business failure
+            // with an audit persistence failure.
+        }
     }
 }
