@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Raw and generated datasets
+data/raw/
+data/processed/
+
+# Trained models
+models/*.json
+models/*.ubj
+models/*.bin
+models/*.pkl
+models/*.joblib
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
