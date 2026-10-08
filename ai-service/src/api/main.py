@@ -1,10 +1,10 @@
 from typing import Dict
 
-import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from src.inference.model_loader import ModelLoader
+from src.inference.prediction_service import PredictionService
 
 
 app = FastAPI(
@@ -17,6 +17,8 @@ app = FastAPI(
 model_loader = ModelLoader()
 model_loader.load()
 
+prediction_service = PredictionService(model_loader)
+
 
 class PredictionRequest(BaseModel):
     features: Dict[str, float] = Field(
@@ -26,19 +28,10 @@ class PredictionRequest(BaseModel):
 
 
 class PredictionResponse(BaseModel):
-    risk_score: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-    )
+    risk_score: float = Field(..., ge=0.0, le=1.0)
     decision: str
     model: str
     feature_count: int
-
-
-class ErrorResponse(BaseModel):
-    error: str
-    message: str
 
 
 @app.get("/health")
@@ -51,70 +44,27 @@ def health_check():
     }
 
 
-@app.post(
-    "/predict",
-    response_model=PredictionResponse,
-    responses={
-        400: {
-            "model": ErrorResponse,
-        },
-        500: {
-            "model": ErrorResponse,
-        },
-    },
-)
+@app.post("/predict", response_model=PredictionResponse)
 def predict(request: PredictionRequest):
-    expected_features = model_loader.get_feature_names()
+    try:
+        return prediction_service.predict(request.features)
 
-    received_features = set(request.features.keys())
-    expected_feature_set = set(expected_features)
+    except ValueError as exc:
+        detail = exc.args[0]
 
-    missing_features = expected_feature_set - received_features
-    unexpected_features = received_features - expected_feature_set
+        if isinstance(detail, dict):
+            raise HTTPException(
+                status_code=400,
+                detail=detail,
+            ) from exc
 
-    if missing_features or unexpected_features:
         raise HTTPException(
             status_code=400,
             detail={
                 "error": "INVALID_FEATURE_SET",
-                "message": (
-                    "The supplied transaction does not match "
-                    "the expected model feature set."
-                ),
-                "missing_features": sorted(missing_features),
-                "unexpected_features": sorted(unexpected_features),
+                "message": "Invalid transaction feature set.",
             },
-        )
-
-    try:
-        feature_values = [
-            request.features[feature]
-            for feature in expected_features
-        ]
-
-        input_data = pd.DataFrame(
-            [feature_values],
-            columns=expected_features,
-        )
-
-        model = model_loader.get_model()
-
-        risk_score = float(
-            model.predict_proba(input_data)[0][1]
-        )
-
-        decision = (
-            "FRAUD_HOLD"
-            if risk_score >= 0.01
-            else "ALLOW"
-        )
-
-        return PredictionResponse(
-            risk_score=risk_score,
-            decision=decision,
-            model="SafePay XGBoost Candidate",
-            feature_count=len(expected_features),
-        )
+        ) from exc
 
     except Exception as exc:
         raise HTTPException(
