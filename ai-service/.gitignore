@@ -34,3 +34,5 @@ models/calibration/
 models/decision_policy/
 # Final evaluation outputs
 models/final_evaluation/
+# Transaction explanation outputs
+models/explanations/
