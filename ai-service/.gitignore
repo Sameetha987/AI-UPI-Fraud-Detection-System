@@ -30,3 +30,5 @@ Thumbs.db
 models/shap/
 # Calibration analysis outputs
 models/calibration/
+# Decision policy analysis outputs
+models/decision_policy/
