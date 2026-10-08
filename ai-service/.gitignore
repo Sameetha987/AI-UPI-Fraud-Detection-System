@@ -28,3 +28,5 @@ models/*.joblib
 Thumbs.db
 # SHAP analysis outputs
 models/shap/
+# Calibration analysis outputs
+models/calibration/
