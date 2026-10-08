@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import numpy as np
@@ -12,10 +13,16 @@ from sklearn.metrics import (
     f1_score,
 )
 
+
 DATA_DIR = Path("data/processed")
+MODEL_DIR = Path("models")
 
 TRAIN_PATH = DATA_DIR / "train.csv"
 VALIDATION_PATH = DATA_DIR / "validation.csv"
+
+CANDIDATE_MODEL_PATH = MODEL_DIR / "safepay_xgb_candidate.json"
+CANDIDATE_METADATA_PATH = MODEL_DIR / "safepay_xgb_candidate_metadata.json"
+
 
 print("Loading datasets...")
 
@@ -29,6 +36,7 @@ y_train = train[TARGET]
 
 X_validation = validation.drop(columns=[TARGET])
 y_validation = validation[TARGET]
+
 
 # ---------------------------------------------------------
 # Encode transaction type
@@ -55,6 +63,7 @@ print(f"Training rows:   {len(X_train):,}")
 print(f"Validation rows: {len(X_validation):,}")
 print(f"Features:         {X_train.shape[1]}")
 
+
 # ---------------------------------------------------------
 # Class imbalance
 # ---------------------------------------------------------
@@ -68,6 +77,7 @@ print("\n========== CLASS IMBALANCE ==========")
 print(f"Normal: {normal_count:,}")
 print(f"Fraud:  {fraud_count:,}")
 print(f"Weight: {scale_pos_weight:.2f}")
+
 
 # ---------------------------------------------------------
 # Candidate configurations
@@ -121,10 +131,12 @@ configs = [
     },
 ]
 
+
 results = []
 
+
 # ---------------------------------------------------------
-# Train configurations
+# Train and evaluate configurations
 # ---------------------------------------------------------
 
 for config in configs:
@@ -231,7 +243,8 @@ results_df = pd.DataFrame(results)
 results_df = results_df.sort_values(
     "pr_auc",
     ascending=False
-)
+).reset_index(drop=True)
+
 
 print("\n")
 print("=" * 90)
@@ -251,8 +264,122 @@ print(
     )
 )
 
+
+# ---------------------------------------------------------
+# Select best configuration
+# ---------------------------------------------------------
+
+best_result = results_df.iloc[0]
+
+best_config_name = best_result["config"]
+
+best_config = next(
+    config
+    for config in configs
+    if config["name"] == best_config_name
+)
+
 print("\nBEST CONFIGURATION")
 print("------------------")
-print(results_df.iloc[0].to_string())
+print(best_result.to_string())
 
-print("\nTuning completed.")
+
+# ---------------------------------------------------------
+# Retrain best configuration
+# ---------------------------------------------------------
+
+print("\n")
+print("=" * 70)
+print("RETRAINING BEST CONFIGURATION")
+print("=" * 70)
+
+best_model = xgb.XGBClassifier(
+    n_estimators=500,
+
+    max_depth=best_config["max_depth"],
+    learning_rate=best_config["learning_rate"],
+    min_child_weight=best_config["min_child_weight"],
+
+    subsample=best_config["subsample"],
+    colsample_bytree=best_config["colsample_bytree"],
+    gamma=best_config["gamma"],
+
+    objective="binary:logistic",
+    eval_metric="aucpr",
+
+    scale_pos_weight=scale_pos_weight,
+
+    tree_method="hist",
+    n_jobs=-1,
+
+    random_state=42,
+)
+
+best_model.fit(
+    X_train,
+    y_train,
+    eval_set=[
+        (X_validation, y_validation)
+    ],
+    verbose=False,
+)
+
+
+# ---------------------------------------------------------
+# Save candidate model
+# ---------------------------------------------------------
+
+MODEL_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+best_model.save_model(
+    CANDIDATE_MODEL_PATH
+)
+
+
+# ---------------------------------------------------------
+# Save model metadata
+# ---------------------------------------------------------
+
+metadata = {
+    "model_name": "SafePay XGBoost Candidate",
+    "model_type": "XGBClassifier",
+    "objective": "binary:logistic",
+    "evaluation_metric": "aucpr",
+    "n_estimators": 500,
+    "random_state": 42,
+    "scale_pos_weight": scale_pos_weight,
+    "features": list(X_train.columns),
+    "best_configuration": best_config,
+    "validation_metrics": {
+        "pr_auc": float(best_result["pr_auc"]),
+        "roc_auc": float(best_result["roc_auc"]),
+        "precision": float(best_result["precision"]),
+        "recall": float(best_result["recall"]),
+        "f1": float(best_result["f1"]),
+    },
+}
+
+with open(
+    CANDIDATE_METADATA_PATH,
+    "w",
+    encoding="utf-8"
+) as file:
+    json.dump(
+        metadata,
+        file,
+        indent=4
+    )
+
+
+print("\n")
+print("=" * 70)
+print("CANDIDATE MODEL SAVED")
+print("=" * 70)
+
+print(f"Model:    {CANDIDATE_MODEL_PATH}")
+print(f"Metadata: {CANDIDATE_METADATA_PATH}")
+
+print("\nTuning and candidate model creation completed.")
