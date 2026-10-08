@@ -1,13 +1,12 @@
+from pathlib import Path
 from typing import Dict
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from src.api.config import settings
 from src.inference.model_loader import ModelLoader
 from src.inference.prediction_service import PredictionService
-
-from pathlib import Path
-
 from src.models.explanation_policy import (
     build_explanation,
     load_internal_explanation,
@@ -21,10 +20,19 @@ app = FastAPI(
 )
 
 
+# -------------------------------------------------------------------
+# Model initialization
+# -------------------------------------------------------------------
+
 model_loader = ModelLoader()
 model_loader.load()
 
 prediction_service = PredictionService(model_loader)
+
+
+# -------------------------------------------------------------------
+# Explanation fixture
+# -------------------------------------------------------------------
 
 EXPLANATION_PATH = (
     Path(__file__).resolve().parents[2]
@@ -37,6 +45,10 @@ internal_explanation = load_internal_explanation(
     str(EXPLANATION_PATH)
 )
 
+
+# -------------------------------------------------------------------
+# Request / response models
+# -------------------------------------------------------------------
 
 class PredictionRequest(BaseModel):
     features: Dict[str, float] = Field(
@@ -51,10 +63,42 @@ class ModelInfo(BaseModel):
 
 
 class PredictionResponse(BaseModel):
-    risk_score: float = Field(..., ge=0.0, le=1.0)
+    risk_score: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+    )
     decision: str
     model: ModelInfo
 
+
+class ExplanationRequest(BaseModel):
+    role: str = Field(
+        ...,
+        description="Caller role requesting transaction explanation.",
+    )
+
+
+# -------------------------------------------------------------------
+# Security
+# -------------------------------------------------------------------
+
+def verify_api_key(
+    x_api_key: str | None,
+):
+    if x_api_key != settings.ai_api_key:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "error": "UNAUTHORIZED",
+                "message": "Invalid AI service credentials.",
+            },
+        )
+
+
+# -------------------------------------------------------------------
+# Health / readiness
+# -------------------------------------------------------------------
 
 @app.get("/health")
 def health_check():
@@ -66,8 +110,29 @@ def health_check():
     }
 
 
-@app.post("/predict", response_model=PredictionResponse)
-def predict(request: PredictionRequest):
+@app.get("/ready")
+def readiness_check():
+    return {
+        "status": "READY",
+        "service": "safepay-ai",
+        "model_loaded": True,
+    }
+
+
+# -------------------------------------------------------------------
+# Fraud prediction
+# -------------------------------------------------------------------
+
+@app.post(
+    "/predict",
+    response_model=PredictionResponse,
+)
+def predict(
+    request: PredictionRequest,
+    x_api_key: str | None = Header(default=None),
+):
+    verify_api_key(x_api_key)
+
     try:
         return prediction_service.predict(request.features)
 
@@ -96,15 +161,19 @@ def predict(request: PredictionRequest):
                 "message": "AI prediction could not be completed.",
             },
         ) from exc
-class ExplanationRequest(BaseModel):
-    role: str = Field(
-        ...,
-        description="Caller role requesting transaction explanation.",
-    )
 
+
+# -------------------------------------------------------------------
+# Explanation
+# -------------------------------------------------------------------
 
 @app.post("/explain")
-def explain(request: ExplanationRequest):
+def explain(
+    request: ExplanationRequest,
+    x_api_key: str | None = Header(default=None),
+):
+    verify_api_key(x_api_key)
+
     try:
         return build_explanation(
             internal_explanation,

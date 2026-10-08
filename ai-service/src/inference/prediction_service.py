@@ -1,12 +1,12 @@
 import pandas as pd
 
 from src.inference.model_loader import ModelLoader
-
+from src.api.config import settings
 
 class PredictionService:
     """Business layer for SafePay AI fraud predictions."""
 
-    DECISION_THRESHOLD = 0.01
+    DECISION_THRESHOLD = settings.ai_threshold
 
     def __init__(self, model_loader: ModelLoader):
         self.model_loader = model_loader
@@ -59,7 +59,7 @@ class PredictionService:
             "risk_score": risk_score,
             "decision": decision,
             "model": {
-                "name": "SafePay XGBoost Candidate",
-                "version": "candidate",
+                "name": settings.model_name,
+                "version": settings.model_version,
             },
         }
