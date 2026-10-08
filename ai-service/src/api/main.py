@@ -27,11 +27,15 @@ class PredictionRequest(BaseModel):
     )
 
 
+class ModelInfo(BaseModel):
+    name: str
+    version: str
+
+
 class PredictionResponse(BaseModel):
     risk_score: float = Field(..., ge=0.0, le=1.0)
     decision: str
-    model: str
-    feature_count: int
+    model: ModelInfo
 
 
 @app.get("/health")

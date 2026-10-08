@@ -58,6 +58,8 @@ class PredictionService:
         return {
             "risk_score": risk_score,
             "decision": decision,
-            "model": "SafePay XGBoost Candidate",
-            "feature_count": len(expected_features),
+            "model": {
+                "name": "SafePay XGBoost Candidate",
+                "version": "candidate",
+            },
         }
