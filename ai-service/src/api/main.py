@@ -25,6 +25,22 @@ class PredictionRequest(BaseModel):
     )
 
 
+class PredictionResponse(BaseModel):
+    risk_score: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+    )
+    decision: str
+    model: str
+    feature_count: int
+
+
+class ErrorResponse(BaseModel):
+    error: str
+    message: str
+
+
 @app.get("/health")
 def health_check():
     return {
@@ -35,7 +51,18 @@ def health_check():
     }
 
 
-@app.post("/predict")
+@app.post(
+    "/predict",
+    response_model=PredictionResponse,
+    responses={
+        400: {
+            "model": ErrorResponse,
+        },
+        500: {
+            "model": ErrorResponse,
+        },
+    },
+)
 def predict(request: PredictionRequest):
     expected_features = model_loader.get_feature_names()
 
@@ -49,7 +76,11 @@ def predict(request: PredictionRequest):
         raise HTTPException(
             status_code=400,
             detail={
-                "error": "Invalid feature set",
+                "error": "INVALID_FEATURE_SET",
+                "message": (
+                    "The supplied transaction does not match "
+                    "the expected model feature set."
+                ),
                 "missing_features": sorted(missing_features),
                 "unexpected_features": sorted(unexpected_features),
             },
@@ -72,17 +103,24 @@ def predict(request: PredictionRequest):
             model.predict_proba(input_data)[0][1]
         )
 
-        decision = "FRAUD_HOLD" if risk_score >= 0.01 else "ALLOW"
+        decision = (
+            "FRAUD_HOLD"
+            if risk_score >= 0.01
+            else "ALLOW"
+        )
 
-        return {
-            "risk_score": risk_score,
-            "decision": decision,
-            "model": "SafePay XGBoost Candidate",
-            "feature_count": len(expected_features),
-        }
+        return PredictionResponse(
+            risk_score=risk_score,
+            decision=decision,
+            model="SafePay XGBoost Candidate",
+            feature_count=len(expected_features),
+        )
 
     except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail="AI prediction failed.",
+            detail={
+                "error": "PREDICTION_FAILED",
+                "message": "AI prediction could not be completed.",
+            },
         ) from exc
