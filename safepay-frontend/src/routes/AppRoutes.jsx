@@ -12,6 +12,7 @@ import RegisterPage from "../pages/auth/RegisterPage";
 import ProtectedRoute from "../components/dashboard/ProtectedRoute";
 import DashboardLayout from "../components/dashboard/DashboardLayout";
 import DashboardPage from "../pages/dashboard/DashboardPage";
+import TransactionHistoryPage from "../pages/dashboard/TransactionHistoryPage";
 
 function AppRoutes() {
   return (
@@ -24,6 +25,7 @@ function AppRoutes() {
         <Route element={<ProtectedRoute />}>
           <Route element={<DashboardLayout />}>
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path = "/transactions" element={<TransactionHistoryPage />}/>
           </Route>
         </Route>
 
