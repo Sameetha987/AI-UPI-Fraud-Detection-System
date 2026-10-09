@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.UUID;
 import java.time.LocalDate;
 import com.safepay.backend.exception.ResourceNotFoundException;
+import com.safepay.backend.repository.UserRepository;
 
 @Service
 public class TransactionService {
@@ -28,13 +29,15 @@ public class TransactionService {
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
     private final AuditLogService auditLogService;
+    private final UserRepository userRepository;
     public TransactionService(
             AccountRepository accountRepository,
-            TransactionRepository transactionRepository, AuditLogService auditLogService
+            TransactionRepository transactionRepository, AuditLogService auditLogService, UserRepository userRepository
     ) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.auditLogService = auditLogService;
+        this.userRepository = userRepository;
     }
 
     @Transactional
@@ -77,26 +80,32 @@ public class TransactionService {
 
 
         // =====================================================
-        // 3. FIND RECEIVER ACCOUNT
-        // =====================================================
-        String receiverAccountNumber =
-                request.receiverAccountNumber().trim();
+// 3. FIND RECEIVER ACCOUNT USING PHONE NUMBER
+// =====================================================
 
-        if (!receiverAccountNumber.matches("\\d{12}")) {
+        String receiverPhone = request.receiverPhone().trim();
+
+        if (!receiverPhone.matches("\\d{10}")) {
             throw new IllegalArgumentException(
-                    "Receiver account number must be exactly 12 digits"
+                    "Receiver phone number must be exactly 10 digits"
             );
         }
-        Account receiverAccount =
-                accountRepository.findByAccountNumber(
-                                receiverAccountNumber
+
+        User receiver = userRepository.findByPhone(receiverPhone)
+                .filter(user -> user.getStatus() == User.Status.ACTIVE)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "No eligible SafePay receiver found"
                         )
+                );
+
+        Account receiverAccount =
+                accountRepository.findByUserId(receiver.getId())
                         .orElseThrow(() ->
                                 new ResourceNotFoundException(
                                         "Receiver account not found"
                                 )
                         );
-
 
         // =====================================================
         // 4. PREVENT SELF TRANSFER

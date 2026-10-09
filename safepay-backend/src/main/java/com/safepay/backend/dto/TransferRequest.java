@@ -1,27 +1,26 @@
 package com.safepay.backend.dto;
 
 import jakarta.validation.constraints.*;
-
 import java.math.BigDecimal;
 
 public record TransferRequest(
 
-        @NotBlank(message = "Receiver account number is required")
-        @Size(
-                min = 12,
-                max = 12,
-                message = "Receiver account number must be 12 digits"
-        )
+        @NotBlank(message = "Receiver phone number is required")
         @Pattern(
-                regexp = "^[0-9]{12}$",
-                message = "Receiver account number must contain exactly 12 digits"
+                regexp = "^[0-9]{10}$",
+                message = "Receiver phone number must contain exactly 10 digits"
         )
-        String receiverAccountNumber,
+        String receiverPhone,
 
         @NotNull(message = "Amount is required")
         @DecimalMin(
                 value = "0.01",
                 message = "Amount must be greater than zero"
+        )
+        @Digits(
+                integer = 17,
+                fraction = 2,
+                message = "Amount must have at most 2 decimal places"
         )
         BigDecimal amount,
 
@@ -30,8 +29,6 @@ public record TransferRequest(
                 regexp = "^[A-Za-z]{3}$",
                 message = "Currency must contain exactly 3 letters"
         )
-        @NotBlank(message = "Currency is required")
-        @Size(min = 3, max = 3, message = "Currency must be 3 characters")
         String currency,
 
         @Size(max = 255, message = "Description cannot exceed 255 characters")

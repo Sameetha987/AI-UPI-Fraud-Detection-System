@@ -12,6 +12,10 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import com.safepay.backend.dto.ReceiverLookupResponse;
+import com.safepay.backend.entity.Account;
+import com.safepay.backend.repository.AccountRepository;
+
 import java.util.Map;
 
 @RestController
@@ -20,13 +24,15 @@ public class UserController {
 
     private final UserRepository userRepository;
     private final UserService userService;
+    private final AccountRepository accountRepository;
 
     public UserController(
             UserRepository userRepository,
-            UserService userService
+            UserService userService, AccountRepository accountRepository
     ) {
         this.userRepository = userRepository;
         this.userService = userService;
+        this.accountRepository = accountRepository;
     }
 
     // =========================================================
@@ -142,5 +148,65 @@ public class UserController {
                         "Password changed successfully"
                 )
         );
+    }
+    // =========================================================
+// LOOK UP RECEIVER BY PHONE NUMBER
+// GET /api/users/lookup?phone=9876543210
+// =========================================================
+
+    @GetMapping("/lookup")
+    public ResponseEntity<ReceiverLookupResponse> lookupReceiver(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam String phone
+    ) {
+        Long senderId = Long.valueOf(jwt.getSubject());
+
+        String normalizedPhone = phone.trim();
+
+        if (!normalizedPhone.matches("\\d{10}")) {
+            throw new IllegalArgumentException(
+                    "Enter a valid 10-digit phone number"
+            );
+        }
+
+        User receiver = userRepository.findByPhone(normalizedPhone)
+                .filter(user -> user.getStatus() == User.Status.ACTIVE)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "No eligible SafePay user found for this phone number"
+                        )
+                );
+
+        if (receiver.getId().equals(senderId)) {
+            throw new IllegalArgumentException(
+                    "You cannot transfer money to your own account"
+            );
+        }
+
+        Account receiverAccount = accountRepository.findByUserId(receiver.getId())
+                .filter(account -> account.getStatus() == Account.Status.ACTIVE)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Receiver account is not available for transfers"
+                        )
+                );
+
+        String maskedPhone =
+                "******" + normalizedPhone.substring(6);
+
+        String accountNumber = receiverAccount.getAccountNumber();
+
+        String maskedAccountNumber =
+                "****" + accountNumber.substring(
+                        Math.max(0, accountNumber.length() - 4)
+                );
+
+        ReceiverLookupResponse response = new ReceiverLookupResponse(
+                receiver.getFullName(),
+                maskedPhone,
+                maskedAccountNumber
+        );
+
+        return ResponseEntity.ok(response);
     }
 }
