@@ -69,7 +69,7 @@ function LoginPage() {
 
       toast.success(`Welcome back, ${data.fullName}!`);
 
-      navigate("/");
+      navigate("/dashboard", { replace: true });
     } catch (error) {
       toast.error(
         error.response ? getErrorMessage(error) : error.message
