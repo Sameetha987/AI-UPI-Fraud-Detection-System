@@ -14,6 +14,7 @@ import DashboardLayout from "../components/dashboard/DashboardLayout";
 import DashboardPage from "../pages/dashboard/DashboardPage";
 import TransactionHistoryPage from "../pages/dashboard/TransactionHistoryPage";
 import TransferPage from "../pages/dashboard/TransferPage";
+import AccountPage from "../pages/dashboard/AccountPage";
 
 function AppRoutes() {
   return (
@@ -26,8 +27,10 @@ function AppRoutes() {
         <Route element={<ProtectedRoute />}>
           <Route element={<DashboardLayout />}>
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="account" element={<AccountPage />} />
             <Route path = "/transactions" element={<TransactionHistoryPage />}/>
             <Route path="transfer" element={<TransferPage />} />
+
           </Route>
         </Route>
 
