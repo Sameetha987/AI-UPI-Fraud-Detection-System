@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Wallet, ArrowLeftRight, History, ShieldCheck, Users, Store, Activity, LogOut, Menu, X } from "lucide-react";
+import { LayoutDashboard, Wallet, ArrowLeftRight, History, ShieldCheck, Users, Store, Activity, LogOut, Menu, X, UserRound } from "lucide-react";
 import { useState } from "react";
 import toast from "react-hot-toast";
 
@@ -8,6 +8,7 @@ const customerNavigation = [
   { label: "My Account", path: "/account", icon: Wallet },
   { label: "Transfer Money", path: "/transfer", icon: ArrowLeftRight },
   { label: "Transactions", path: "/transactions", icon: History },
+  { label: "My Profile", path: "/profile", icon: UserRound },
 ];
 const merchantNavigation = [
   { label: "Merchant Dashboard", path: "/merchant/dashboard", icon: LayoutDashboard },

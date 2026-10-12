@@ -13,6 +13,7 @@ import AdminDashboardPage from "../pages/admin/AdminDashboardPage";
 import AdminUsersPage from "../pages/admin/AdminUsersPage";
 import AdminTransactionsPage from "../pages/admin/AdminTransactionsPage";
 import AdminMerchantsPage from "../pages/admin/AdminMerchantsPage";
+import ProfilePage from "../pages/dashboard/ProfilePage";
 
 function AppRoutes() {
   return (
@@ -28,6 +29,7 @@ function AppRoutes() {
             <Route path="/account" element={<AccountPage />} />
             <Route path="/transactions" element={<TransactionHistoryPage />} />
             <Route path="/transfer" element={<TransferPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
           </Route>
         </Route>
 

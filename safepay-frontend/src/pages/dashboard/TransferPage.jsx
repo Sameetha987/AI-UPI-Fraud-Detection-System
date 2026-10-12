@@ -1,19 +1,30 @@
-import { useState } from "react";
+
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  AnimatePresence,
+  motion,
+  useReducedMotion,
+} from "framer-motion";
+import {
   ArrowRight,
-  BrainCircuit,
-  CircleCheck,
   ArrowRightLeft,
+  Check,
   CheckCircle2,
   CircleAlert,
+  Clock3,
+  Copy,
   LoaderCircle,
   LockKeyhole,
   Phone,
+  Printer,
   ReceiptText,
+  RefreshCw,
   ShieldCheck,
   UserRound,
   Wallet,
+  X,
+  XCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../../lib/api";
@@ -24,13 +35,140 @@ const initialForm = {
   description: "",
 };
 
-function maskPhone(phone) {
-  if (!phone) return "";
-  return `******${phone.slice(-4)}`;
-}
+const money = (value) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(value) || 0);
+
+const formatDate = (value) => {
+  if (!value) return "Not provided";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return date.toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const createIdempotencyKey = () => {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random()
+    .toString(36)
+    .slice(2)}`;
+};
+
+const escapeHtml = (value) =>
+  String(value ?? "").replace(/[&<>"']/g, (character) => {
+    const entities = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    };
+
+    return entities[character];
+  });
+
+const getStatus = (value) => {
+  const status = String(value || "").toUpperCase();
+
+  const statuses = {
+    SUCCESS: {
+      title: "Transfer successful",
+      description: "The backend confirmed this transfer as successful.",
+      label: "Successful",
+      Icon: CheckCircle2,
+      color: "emerald",
+    },
+    PENDING: {
+      title: "Transfer pending",
+      description:
+        "This transfer is awaiting confirmation. Check transaction history for updates.",
+      label: "Pending",
+      Icon: Clock3,
+      color: "amber",
+    },
+    FAILED: {
+      title: "Transfer failed",
+      description:
+        "The backend reported a failed transfer. Review its details before trying again.",
+      label: "Failed",
+      Icon: XCircle,
+      color: "rose",
+    },
+    CANCELLED: {
+      title: "Transfer cancelled",
+      description: "The backend reports that this transfer was cancelled.",
+      label: "Cancelled",
+      Icon: CircleAlert,
+      color: "slate",
+    },
+  };
+
+  return (
+    statuses[status] || {
+      title: "Transfer status received",
+      description:
+        "The final outcome is not confirmed here. Check transaction history before retrying.",
+      label: value || "Unknown",
+      Icon: CircleAlert,
+      color: "blue",
+    }
+  );
+};
+
+const statusStyles = {
+  emerald: {
+    panel: "border-emerald-200 bg-emerald-50",
+    icon: "bg-emerald-100 text-emerald-600",
+    text: "text-emerald-800",
+    badge: "border-emerald-200 bg-emerald-100 text-emerald-800",
+  },
+  amber: {
+    panel: "border-amber-200 bg-amber-50",
+    icon: "bg-amber-100 text-amber-700",
+    text: "text-amber-900",
+    badge: "border-amber-200 bg-amber-100 text-amber-800",
+  },
+  rose: {
+    panel: "border-rose-200 bg-rose-50",
+    icon: "bg-rose-100 text-rose-600",
+    text: "text-rose-800",
+    badge: "border-rose-200 bg-rose-100 text-rose-800",
+  },
+  slate: {
+    panel: "border-slate-200 bg-slate-50",
+    icon: "bg-slate-200 text-slate-300",
+    text: "text-slate-800",
+    badge: "border-slate-200 bg-slate-100 text-slate-700",
+  },
+  blue: {
+    panel: "border-blue-200 bg-blue-50",
+    icon: "bg-blue-100 text-blue-600",
+    text: "text-blue-800",
+    badge: "border-blue-200 bg-blue-100 text-blue-800",
+  },
+};
 
 function TransferPage() {
   const navigate = useNavigate();
+  const reduceMotion = useReducedMotion();
 
   const [form, setForm] = useState(initialForm);
   const [receiver, setReceiver] = useState(null);
@@ -38,49 +176,70 @@ function TransferPage() {
   const [transferLoading, setTransferLoading] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [receipt, setReceipt] = useState(null);
-  const [riskAssessment, setRiskAssessment] = useState(null);
+  const [idempotencyKey, setIdempotencyKey] = useState("");
 
-  // Keep the same idempotency key when retrying the same payment.
-  const [idempotencyKey, setIdempotencyKey] = useState(null);
+  const [balance, setBalance] = useState(null);
+  const [balanceLoading, setBalanceLoading] = useState(true);
 
-  function updateField(event) {
-    const { name, value } = event.target;
+  const animateIn = reduceMotion
+    ? { initial: false, animate: { opacity: 1 } }
+    : {
+        initial: { opacity: 0, y: 12 },
+        animate: { opacity: 1, y: 0 },
+        transition: { duration: 0.28 },
+      };
 
-    setForm((previous) => ({
-      ...previous,
-      [name]: value,
-    }));
+  const loadBalance = useCallback(async () => {
+    setBalanceLoading(true);
 
-    if (name === "phone") {
-      setReceiver(null);
-      setShowConfirmation(false);
+    try {
+      const response = await api.get("/api/accounts/me");
+      const account = response.data;
+
+      const value =
+        account?.balance ??
+        account?.availableBalance ??
+        account?.currentBalance;
+
+      setBalance(
+        value === undefined || value === null ? null : Number(value)
+      );
+    } catch {
+      setBalance(null);
+    } finally {
+      setBalanceLoading(false);
     }
+  }, []);
 
-    // Changing payment details creates a new logical payment.
-    if (name === "amount" || name === "description") {
-      setIdempotencyKey(null);
-      setShowConfirmation(false);
-    }
+  useEffect(() => {
+    loadBalance();
+  }, [loadBalance]);
 
+  const updateField = (field, value) => {
+    setForm((previous) => ({ ...previous, [field]: value }));
     setReceipt(null);
-    setRiskAssessment(null);
-  }
+    setShowConfirmation(false);
+    setIdempotencyKey("");
 
-  async function findReceiver(event) {
+    if (field === "phone") {
+      setReceiver(null);
+    }
+  };
+
+  const findReceiver = async (event) => {
     event.preventDefault();
 
     const phone = form.phone.trim();
 
     if (!/^\d{10}$/.test(phone)) {
-      toast.error("Enter a valid 10-digit phone number.");
+      toast.error("Enter a valid 10-digit mobile number.");
       return;
     }
 
     setLookupLoading(true);
     setReceiver(null);
     setReceipt(null);
-    setShowConfirmation(false);
-    setRiskAssessment(null);
+    setIdempotencyKey("");
 
     try {
       const response = await api.get("/api/users/lookup", {
@@ -89,210 +248,108 @@ function TransferPage() {
 
       const data = response.data;
 
-      if (
-        !data?.fullName ||
-        !data?.maskedPhone ||
-        !data?.maskedAccountNumber
-      ) {
-        throw new Error("The receiver details returned by the server are incomplete.");
+      if (!data?.fullName) {
+        toast.error("Recipient details could not be verified.");
+        return;
       }
 
-      setReceiver(data);
-      setIdempotencyKey(null);
-      toast.success("Receiver found successfully.");
-    } catch (error) {
-      setReceiver(null);
+      setReceiver({
+        fullName: data.fullName,
+        maskedPhone: data.maskedPhone || "Verified recipient",
+        maskedAccountNumber:
+          data.maskedAccountNumber || "Account verified",
+      });
 
+      toast.success("Recipient verified.");
+    } catch (error) {
       const status = error.response?.status;
+      const data = error.response?.data;
 
       if (status === 401 || status === 403) {
         toast.error("Your session may have expired. Please log in again.");
-      } else if (status === 404 || status === 400) {
+      } else if (status === 404) {
+        toast.error("No eligible recipient was found.");
+      } else if (status === 400) {
         toast.error(
-          error.response?.data?.message ||
-            "No eligible SafePay receiver was found.",
+          typeof data?.message === "string"
+            ? data.message
+            : "Check the mobile number and try again."
         );
       } else {
-        toast.error(
-          error.response?.data?.message ||
-            "Unable to find the receiver. Please try again.",
-        );
+        toast.error("Unable to verify the recipient. Try again.");
       }
     } finally {
       setLookupLoading(false);
     }
-  }
+  };
 
-  function validatePayment() {
+  const validatePayment = () => {
     if (!receiver) {
-      toast.error("Find and confirm a receiver first.");
+      toast.error("Verify the recipient before continuing.");
       return false;
     }
 
-    const amountText = form.amount.trim();
-
-    // Require a positive INR amount with no more than two decimal places.
-    if (!/^\d+(\.\d{1,2})?$/.test(amountText)) {
-      toast.error("Enter a valid amount with up to two decimal places.");
+    if (!/^\d{10}$/.test(form.phone.trim())) {
+      toast.error("Enter a valid mobile number.");
       return false;
     }
 
-    const amount = Number(amountText);
+    if (!form.amount.trim()) {
+      toast.error("Enter the transfer amount.");
+      return false;
+    }
+
+    if (!/^\d+(\.\d{1,2})?$/.test(form.amount.trim())) {
+      toast.error("Use up to two decimal places.");
+      return false;
+    }
+
+    const amount = Number(form.amount);
 
     if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error("Transfer amount must be greater than zero.");
+      toast.error("Enter an amount greater than zero.");
       return false;
     }
 
     if (amount > 9999999999999999) {
-      toast.error("The amount is too large.");
+      toast.error("The transfer amount is too large.");
       return false;
     }
 
-    if (form.description.length > 255) {
+    if (balance !== null && amount > balance) {
+      toast.error("The amount exceeds your displayed balance.");
+      return false;
+    }
+
+    if (form.description.trim().length > 255) {
       toast.error("Description cannot exceed 255 characters.");
       return false;
     }
 
     return true;
-  }
+  };
 
-  async function openConfirmation(event) {
+  const openConfirmation = async (event) => {
     event.preventDefault();
 
     if (!validatePayment()) return;
 
-    const amount = Number(form.amount);
-    const factors = [];
-    let score = 10;
+    // Refresh for display. The backend must validate the actual balance.
+    await loadBalance();
 
-    // 1. Transaction amount band.
-    if (amount >= 50000) {
-      score += 25;
-      factors.push("Amount: high-value transfer (₹50,000 or more; +25).");
-    } else if (amount >= 20000) {
-      score += 15;
-      factors.push("Amount: elevated transfer value (₹20,000 or more; +15).");
-    } else if (amount >= 10000) {
-      score += 8;
-      factors.push("Amount: reached the ₹10,000 review band (+8).");
-    } else {
-      factors.push("Amount: below the configured value review bands (+0).");
-    }
-
-    // 2. Amount relative to the sender's current account balance.
-    let balanceAvailable = false;
-    try {
-      const accountResponse = await api.get("/api/accounts/me");
-      const balance = Number(accountResponse.data?.balance);
-
-      if (Number.isFinite(balance) && balance > 0) {
-        balanceAvailable = true;
-        const balanceShare = (amount / balance) * 100;
-
-        if (balanceShare >= 80) {
-          score += 25;
-          factors.push(`Balance impact: transfer uses ${balanceShare.toFixed(0)}% of available balance (+25).`);
-        } else if (balanceShare >= 50) {
-          score += 15;
-          factors.push(`Balance impact: transfer uses ${balanceShare.toFixed(0)}% of available balance (+15).`);
-        } else if (balanceShare >= 25) {
-          score += 8;
-          factors.push(`Balance impact: transfer uses ${balanceShare.toFixed(0)}% of available balance (+8).`);
-        } else {
-          factors.push(`Balance impact: transfer uses ${balanceShare.toFixed(0)}% of available balance (+0).`);
-        }
-      }
-    } catch {
-      // Do not prevent a valid transfer if the balance comparison is unavailable.
-    }
-
-    if (!balanceAvailable) {
-      factors.push("Balance impact: current balance comparison unavailable (not scored).");
-    }
-
-    // 3. Local time-of-day signal.
-    const hour = new Date().getHours();
-    if (hour >= 22 || hour < 5) {
-      score += 15;
-      factors.push(`Transaction time: late-night window (${String(hour).padStart(2, "0")}:00; +15).`);
-    } else {
-      factors.push(`Transaction time: outside the configured late-night window (${String(hour).padStart(2, "0")}:00; +0).`);
-    }
-
-    // 4. Description keyword signal. A keyword match is only a prompt to double-check.
-    const descriptionText = form.description.trim().toLowerCase();
-    const flaggedTerms = [
-      "urgent",
-      "otp",
-      "lottery",
-      "prize",
-      "gift card",
-      "account blocked",
-      "verify account",
-      "refund fee",
-      "claim reward",
-    ];
-    const matchedTerms = flaggedTerms.filter((term) => descriptionText.includes(term));
-
-    if (matchedTerms.length > 0) {
-      score += 20;
-      factors.push(`Description: contains review keywords (${matchedTerms.join(", ")}; +20).`);
-    } else {
-      factors.push("Description: no configured review keywords found (+0).");
-    }
-
-    // 5. Recipient lookup signal: lookup must have succeeded to reach confirmation.
-    if (receiver?.fullName && receiver?.maskedPhone && receiver?.maskedAccountNumber) {
-      score = Math.max(0, score - 10);
-      factors.push("Recipient: registered recipient lookup succeeded (risk-reducing signal; −10).");
-    } else {
-      score += 15;
-      factors.push("Recipient: recipient details could not be confirmed (+15).");
-    }
-
-    score = Math.max(0, Math.min(score, 100));
-    const level = score >= 60 ? "High" : score >= 30 ? "Medium" : "Low";
-
-    setRiskAssessment({
-      score,
-      level,
-      factors,
-      method: "Rule-based preliminary assessment using five available transaction signals",
-    });
-
-    if (!idempotencyKey) {
-      setIdempotencyKey(crypto.randomUUID());
-    }
-
+    setIdempotencyKey((previous) => previous || createIdempotencyKey());
     setShowConfirmation(true);
-  }
+  };
 
-  async function confirmTransfer() {
+  const confirmTransfer = async () => {
     if (transferLoading || !receiver) return;
 
-    if (!validatePayment()) {
-      setShowConfirmation(false);
-      return;
-    }
+    const requestKey = idempotencyKey || createIdempotencyKey();
 
-    // A retry must use the same key as the original request.
-    const requestKey = idempotencyKey || crypto.randomUUID();
-
-    if (!idempotencyKey) {
-      setIdempotencyKey(requestKey);
-    }
-
+    setIdempotencyKey(requestKey);
     setTransferLoading(true);
 
     try {
-      /*
-       * The lookup response deliberately does not expose the full account
-       * number. Resolve it securely on the backend using the phone number,
-       * or use a server-issued receiver identifier in the transfer request.
-       *
-       * Do not attempt to construct a full account number from its mask.
-       */
       const response = await api.post("/api/transactions/transfer", {
         receiverPhone: form.phone.trim(),
         amount: Number(form.amount),
@@ -301,487 +358,881 @@ function TransferPage() {
         idempotencyKey: requestKey,
       });
 
-      setReceipt(response.data);
+      const data = response.data || {};
+
+      // Preserve the status supplied by the backend.
+      setReceipt({
+        ...data,
+        receiverName: receiver.fullName,
+        receiverPhone: receiver.maskedPhone,
+        receiverAccount: receiver.maskedAccountNumber,
+      });
+
       setShowConfirmation(false);
-      setForm(initialForm);
-      setReceiver(null);
-      setIdempotencyKey(null);
 
-      toast.success("Transfer request processed.");
+      const status = String(data.status || "").toUpperCase();
+
+      if (status === "SUCCESS") {
+        toast.success("Transfer successful.");
+        setForm(initialForm);
+        setReceiver(null);
+        setIdempotencyKey("");
+        loadBalance();
+      } else if (status === "PENDING") {
+        toast("Transfer pending confirmation.");
+      } else if (status === "FAILED" || status === "CANCELLED") {
+        toast.error(`Transfer ${status.toLowerCase()}.`);
+      } else {
+        toast("Transfer response received. Check transaction history.");
+      }
     } catch (error) {
-        const status = error.response?.status;
-        const data = error.response?.data;
+      const status = error.response?.status;
+      const data = error.response?.data;
 
-        let message =
-          "The transfer result could not be confirmed. Check your transaction history before retrying.";
+      let message =
+        "Transfer outcome could not be confirmed. Check transaction history before retrying.";
 
-        if (typeof data === "string" && data.trim()) {
-          message = data;
-        } else if (typeof data?.message === "string" && data.message.trim()) {
-          message = data.message;
-        } else if (
-          typeof data?.detail === "string" &&
-          data.detail.trim()
-        ) {
-          message = data.detail;
-        } else if (status === 400) {
-          message = "Transfer rejected. Check the amount and payment details.";
-        } else if (status === 401 || status === 403) {
-          message = "Your session expired. Please log in again.";
-        } else if (status >= 500 || !error.response) {
-          message =
-            "The transfer result could not be confirmed. Check transaction history before retrying.";
-        }
+      if (status === 400) {
+        message =
+          typeof data?.message === "string"
+            ? data.message
+            : "The transfer was rejected. Check the payment details.";
+      } else if (status === 401 || status === 403) {
+        message = "Your session may have expired. Please log in again.";
+      }
 
-        toast.error(message);
+      toast.error(message);
 
-        // Preserve the idempotency key after an uncertain result.
-        // Do not automatically retry a payment.
+      // Keep the same key and entered details after an uncertain outcome.
+      // Do not automatically submit the payment again.
     } finally {
       setTransferLoading(false);
     }
-  }
+  };
 
-  function startAnotherTransfer() {
+  const copyText = async (value, successMessage = "Copied.") => {
+    if (!value) {
+      toast.error("Nothing to copy.");
+      return;
+    }
+
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard unavailable");
+      }
+
+      await navigator.clipboard.writeText(String(value));
+      toast.success(successMessage);
+    } catch {
+      toast.error("Unable to copy. Please copy it manually.");
+    }
+  };
+
+  const printReceipt = () => {
+    if (!receipt) return;
+
+    const details = [
+      ["Status", getStatus(receipt.status).label],
+      ["Amount", money(receipt.amount)],
+      ["Recipient", receipt.receiverName || "Not provided"],
+      ["Phone", receipt.receiverPhone || "Not provided"],
+      ["Account", receipt.receiverAccount || "Not provided"],
+      [
+        "Reference",
+        receipt.transactionReference || receipt.reference || "Not provided",
+      ],
+      ["Description", receipt.description || "Not provided"],
+      [
+        "Date",
+        formatDate(receipt.completedAt || receipt.createdAt),
+      ],
+    ];
+
+    const rows = details
+      .map(
+        ([label, value]) => `
+          <tr>
+            <th>${escapeHtml(label)}</th>
+            <td>${escapeHtml(value)}</td>
+          </tr>`
+      )
+      .join("");
+
+    const popup = window.open("", "_blank", "width=700,height=800");
+
+    if (!popup) {
+      toast.error("Allow pop-ups to print the receipt.");
+      return;
+    }
+
+    popup.document.write(`
+      <!doctype html>
+      <html lang="en">
+        <head>
+          <meta charset="utf-8" />
+          <title>SafePay Receipt</title>
+          <style>
+            body { font-family: Arial, sans-serif; max-width: 650px; margin: 35px auto; padding: 20px; color: #172033; }
+            h1 { margin-bottom: 4px; }
+            p { color: #64748b; }
+            .amount { margin: 24px 0; font-size: 30px; font-weight: bold; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 13px 8px; text-align: left; border-bottom: 1px solid #e2e8f0; overflow-wrap: anywhere; }
+            th { width: 35%; color: #64748b; }
+            @media print { body { margin: 0; } }
+          </style>
+        </head>
+        <body>
+          <h1>SafePay</h1>
+          <p>Transfer receipt</p>
+          <div class="amount">${escapeHtml(money(receipt.amount))}</div>
+          <table>${rows}</table>
+        </body>
+      </html>
+    `);
+
+    popup.document.close();
+    popup.focus();
+
+    window.setTimeout(() => {
+      try {
+        popup.print();
+      } catch {
+        toast.error("Unable to open the print dialog.");
+      }
+    }, 300);
+  };
+
+  const startAnotherTransfer = () => {
     setForm(initialForm);
     setReceiver(null);
     setReceipt(null);
     setShowConfirmation(false);
-    setIdempotencyKey(null);
-    setRiskAssessment(null);
-  }
+    setIdempotencyKey("");
+    loadBalance();
+  };
 
-  if (receipt) {
-    return (
-      <section className="mx-auto max-w-2xl">
-        <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-6 text-center sm:p-10">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-400/10">
-            <CheckCircle2 className="text-emerald-300" size={34} />
-          </div>
-
-          <h1 className="text-2xl font-bold">Transfer response received</h1>
-          <p className="mt-2 text-sm text-slate-400">
-            Check the transaction status below before treating this payment as
-            completed.
-          </p>
-
-          <div className="mt-8 rounded-2xl border border-white/10 bg-slate-950/70 p-5 text-left">
-            <p className="text-sm text-slate-400">Amount</p>
-            <p className="mt-1 text-3xl font-bold">
-              ₹{Number(receipt.amount ?? form.amount ?? 0).toLocaleString("en-IN", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-            </p>
-
-            <div className="mt-5 flex items-center justify-between gap-4 border-t border-white/10 pt-4">
-              <span className="text-sm text-slate-400">Status</span>
-              <span className="rounded-full bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300">
-                {receipt.status || "Unknown"}
-              </span>
-            </div>
-
-            <div className="mt-4 flex items-start justify-between gap-4">
-              <span className="text-sm text-slate-400">Reference</span>
-              <span className="break-all text-right text-sm font-medium">
-                {receipt.transactionReference || "Not provided"}
-              </span>
-            </div>
-          </div>
-
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-            <button
-              onClick={() => navigate("/transactions")}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300"
-            >
-              <ReceiptText size={18} />
-              View transactions
-            </button>
-
-            <button
-              onClick={startAnotherTransfer}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 px-5 py-3 font-semibold transition hover:bg-white/5"
-            >
-              <ArrowRightLeft size={18} />
-              New transfer
-            </button>
-          </div>
-        </div>
-      </section>
-    );
-  }
+  const statusDetails = receipt ? getStatus(receipt.status) : null;
+  const reference = receipt
+    ? receipt.transactionReference || receipt.reference
+    : null;
+  const currentStatusStyles = statusDetails
+    ? statusStyles[statusDetails.color]
+    : null;
 
   return (
-    <section className="mx-auto max-w-5xl">
-      <div className="mb-8">
-        <p className="mb-2 flex items-center gap-2 text-sm font-medium text-cyan-300">
-          <ShieldCheck size={17} />
-          Secure payments
+    <div className="mx-auto w-full max-w-[1440px] space-y-5 pb-8 text-slate-100">
+      {/* Compact heading */}
+      <motion.header {...animateIn}>
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-400/30 bg-cyan-400/10 text-cyan-300 shadow-lg shadow-cyan-950/30">
+            <ArrowRightLeft size={21} />
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-300">
+              SafePay transfers
+            </p>
+            <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+              Transfer money
+            </h1>
+          </div>
+        </div>
+
+        <p className="mt-2 max-w-2xl text-sm text-slate-300">
+          Verify your recipient, review your payment, and confirm the transfer.
         </p>
+      </motion.header>
 
-        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-          Transfer Money
-        </h1>
+      {/* Compact security strip */}
+      <motion.div
+        {...animateIn}
+        transition={{ delay: 0.04, duration: 0.28 }}
+        className="flex items-center gap-3 rounded-2xl border border-cyan-400/20 bg-gradient-to-r from-slate-900 via-slate-900 to-blue-950 px-4 py-3 shadow-sm shadow-black/10"
+      >
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-300">
+          <ShieldCheck size={21} />
+        </div>
 
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400 sm:text-base">
-          Find a SafePay recipient using their registered phone number, verify
-          the details, and confirm your payment.
-        </p>
-      </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold text-white">
+            Secure transfers
+          </p>
+          <p className="mt-0.5 text-xs leading-5 text-slate-300">
+            Always verify the recipient and check the final transaction status.
+          </p>
+        </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-        <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-5 sm:p-8">
-          <form onSubmit={openConfirmation} className="space-y-7">
+        <LockKeyhole
+          size={18}
+          className="hidden shrink-0 text-cyan-300 sm:block"
+        />
+      </motion.div>
+
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+        {/* Transfer form */}
+        <motion.section
+          {...animateIn}
+          transition={{ delay: 0.08, duration: 0.3 }}
+          className="overflow-hidden rounded-2xl border border-blue-400/20 bg-gradient-to-br from-[#0d1931] via-[#101f3b] to-[#102b43] shadow-[0_18px_55px_rgba(0,0,0,0.28)]"
+        >
+          <div className="flex items-center gap-3 border-b border-white/10 bg-gradient-to-r from-blue-950 via-slate-900 to-violet-950 px-5 py-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 text-white shadow-sm">
+              <Wallet size={21} />
+            </div>
+
+            <div>
+              <h2 className="font-bold text-white">New transfer</h2>
+              <p className="text-xs text-slate-300">
+                Enter recipient and payment details.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={openConfirmation} className="space-y-5 p-5">
+            {/* Recipient */}
             <div>
               <label
-                htmlFor="phone"
-                className="mb-2 block text-sm font-medium text-slate-200"
+                htmlFor="recipient-phone"
+                className="mb-2 block text-sm font-semibold text-slate-200"
               >
-                Receiver's phone number
+                Recipient mobile number
               </label>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <div className="relative flex-1">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="relative min-w-0 flex-1">
                   <Phone
-                    size={18}
-                    className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"
+                    size={17}
+                    className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300"
                   />
 
                   <input
-                    id="phone"
-                    name="phone"
+                    id="recipient-phone"
                     type="tel"
                     inputMode="numeric"
                     autoComplete="off"
                     maxLength={10}
-                    pattern="[0-9]{10}"
-                    placeholder="Enter 10-digit number"
                     value={form.phone}
-                    onChange={updateField}
+                    placeholder="10-digit mobile number"
                     disabled={lookupLoading || transferLoading}
-                    className="w-full rounded-xl border border-white/10 bg-slate-950 py-3.5 pl-11 pr-4 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400/60 disabled:opacity-60"
-                    required
+                    onChange={(event) =>
+                      updateField(
+                        "phone",
+                        event.target.value.replace(/\D/g, "").slice(0, 10)
+                      )
+                    }
+                    className="w-full rounded-xl border border-slate-600/70 bg-[#050d1d] py-3 pl-10 pr-3 text-sm text-white outline-none transition placeholder:text-slate-300 focus:border-cyan-300 focus:bg-[#0a1830] focus:ring-4 focus:ring-cyan-300/25 disabled:opacity-80"
                   />
                 </div>
 
                 <button
                   type="button"
                   onClick={findReceiver}
-                  disabled={lookupLoading || transferLoading}
-                  className="flex items-center justify-center gap-2 rounded-xl border border-cyan-400/30 px-5 py-3 font-semibold text-cyan-300 transition hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={
+                    lookupLoading ||
+                    transferLoading ||
+                    form.phone.length !== 10
+                  }
+                  className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-violet-500 px-4 text-sm font-semibold text-white shadow-sm transition hover:from-blue-400 hover:to-violet-400 disabled:cursor-not-allowed disabled:opacity-75"
                 >
                   {lookupLoading ? (
-                    <LoaderCircle size={18} className="animate-spin" />
+                    <LoaderCircle size={16} className="animate-spin" />
+                  ) : receiver ? (
+                    <CheckCircle2 size={16} />
                   ) : (
-                    <UserRound size={18} />
+                    <ShieldCheck size={16} />
                   )}
-                  Find receiver
+
+                  {lookupLoading
+                    ? "Verifying..."
+                    : receiver
+                      ? "Verified"
+                      : "Verify recipient"}
                 </button>
               </div>
 
-              <p className="mt-2 text-xs text-slate-500">
-                The receiver must have an eligible SafePay account.
-              </p>
-            </div>
+              <AnimatePresence mode="wait">
+                {lookupLoading && (
+                  <motion.div
+                    key="verifying"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mt-3 overflow-hidden"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <div className="flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-700">
+                      <LoaderCircle size={18} className="animate-spin" />
+                      Checking recipient details...
+                    </div>
+                  </motion.div>
+                )}
 
-            {receiver && (
-              <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-5">
-                <div className="flex items-start gap-4">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-400/10">
-                    <UserRound className="text-emerald-300" size={23} />
-                  </div>
+                {!lookupLoading && receiver && (
+                  <motion.div
+                    key="verified"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="mt-3 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <motion.div
+                      initial={reduceMotion ? false : { scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 260,
+                        damping: 15,
+                      }}
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white"
+                    >
+                      <Check size={22} strokeWidth={3} />
+                    </motion.div>
 
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="break-words font-semibold">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-emerald-900">
                         {receiver.fullName}
-                      </h2>
-                      <CheckCircle2
-                        size={16}
-                        className="text-emerald-300"
-                      />
+                      </p>
+                      <p className="mt-0.5 text-xs text-emerald-800">
+                        {receiver.maskedPhone}
+                      </p>
+                      <p className="mt-0.5 text-xs text-emerald-700">
+                        Account: {receiver.maskedAccountNumber}
+                      </p>
                     </div>
 
-                    <p className="mt-1 text-sm text-slate-400">
-                      {receiver.maskedPhone}
-                    </p>
+                    <CheckCircle2
+                      size={20}
+                      className="shrink-0 text-emerald-600"
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
-                    <p className="mt-2 text-xs text-slate-500">
-                      Account ending in{" "}
-                      {receiver.maskedAccountNumber.slice(-4)}
-                    </p>
-                  </div>
-                </div>
-
-                <p className="mt-4 text-xs leading-5 text-slate-400">
-                  Verify the recipient before sending money. A name match alone
-                  does not establish identity.
-                </p>
-              </div>
-            )}
-
+            {/* Amount */}
             <div>
               <label
-                htmlFor="amount"
-                className="mb-2 block text-sm font-medium text-slate-200"
+                htmlFor="transfer-amount"
+                className="mb-2 block text-sm font-semibold text-slate-200"
               >
-                Amount (INR)
+                Transfer amount
               </label>
 
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-semibold text-slate-500">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-bold text-slate-300">
                   ₹
                 </span>
 
                 <input
-                  id="amount"
-                  name="amount"
+                  id="transfer-amount"
                   type="number"
+                  inputMode="decimal"
                   min="0.01"
-                  max="9999999999999999"
                   step="0.01"
-                  placeholder="0.00"
                   value={form.amount}
-                  onChange={updateField}
+                  placeholder="0.00"
                   disabled={transferLoading}
-                  className="w-full rounded-xl border border-white/10 bg-slate-950 py-4 pl-10 pr-4 text-2xl font-semibold text-white outline-none transition placeholder:text-slate-700 focus:border-cyan-400/60 disabled:opacity-60"
-                  required
+                  onChange={(event) =>
+                    updateField("amount", event.target.value)
+                  }
+                  className="w-full rounded-xl border border-slate-600/70 bg-[#050d1d] py-3.5 pl-10 pr-4 text-xl font-bold text-white outline-none transition placeholder:text-slate-300 focus:border-cyan-300 focus:bg-[#0a1830] focus:ring-4 focus:ring-cyan-300/25 disabled:opacity-80"
                 />
+              </div>
+
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs text-slate-300">
+                  Indian Rupee (INR)
+                </span>
+
+                <button
+                  type="button"
+                  onClick={loadBalance}
+                  disabled={balanceLoading || transferLoading}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-cyan-200 hover:text-cyan-100 disabled:opacity-70"
+                >
+                  <RefreshCw
+                    size={13}
+                    className={balanceLoading ? "animate-spin" : ""}
+                  />
+                  Refresh balance
+                </button>
               </div>
             </div>
 
+            {/* Description */}
             <div>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <label
-                  htmlFor="description"
-                  className="block text-sm font-medium text-slate-200"
-                >
-                  Payment description
-                </label>
+              <label
+                htmlFor="transfer-description"
+                className="mb-2 block text-sm font-semibold text-slate-200"
+              >
+                Description{" "}
+                <span className="font-normal text-slate-300">Optional</span>
+              </label>
 
-                <span className="text-xs text-slate-500">
-                  {form.description.length}/255
+              <textarea
+                id="transfer-description"
+                rows={2}
+                maxLength={255}
+                value={form.description}
+                placeholder="What's this transfer for?"
+                disabled={transferLoading}
+                onChange={(event) =>
+                  updateField("description", event.target.value)
+                }
+                className="w-full resize-y rounded-xl border border-slate-600/70 bg-[#050d1d] px-3.5 py-3 text-sm text-white outline-none transition placeholder:text-slate-300 focus:border-cyan-300 focus:bg-[#0a1830] focus:ring-4 focus:ring-cyan-300/25 disabled:opacity-80"
+              />
+
+              <p className="mt-1 text-right text-xs text-slate-300">
+                {form.description.length}/255
+              </p>
+            </div>
+
+            {/* Compact amount summary */}
+            <div className="rounded-xl border border-white/10 bg-[#081326]/65 px-4 py-3.5">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-slate-300">Transfer amount</span>
+                <span className="font-semibold text-slate-100">
+                  {money(form.amount)}
                 </span>
               </div>
 
-              <input
-                id="description"
-                name="description"
-                type="text"
-                maxLength={255}
-                placeholder="e.g. Lunch payment"
-                value={form.description}
-                onChange={updateField}
-                disabled={transferLoading}
-                className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3.5 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400/60 disabled:opacity-60"
-              />
+              <div className="mt-2 flex items-center justify-between gap-3 text-sm">
+                <span className="text-slate-300">Displayed fee</span>
+                <span className="font-semibold text-slate-300">
+                  Determined by backend
+                </span>
+              </div>
+
+              <div className="mt-3 flex items-center justify-between gap-3 border-t border-dashed border-white/10 pt-3">
+                <span className="text-sm font-bold text-slate-200">
+                  Amount to send
+                </span>
+                <span className="text-lg font-bold text-white">
+                  {money(form.amount)}
+                </span>
+              </div>
             </div>
 
             <button
               type="submit"
-              disabled={!receiver || transferLoading}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 px-5 py-4 font-semibold text-slate-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={!receiver || transferLoading || lookupLoading}
+              className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 via-cyan-400 to-violet-500 px-4 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-cyan-400/20 transition hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-75 disabled:hover:translate-y-0"
             >
-              Review payment
-              <ArrowRight size={19} />
+              Review transfer
+              <ArrowRight
+                size={17}
+                className="transition-transform group-hover:translate-x-1"
+              />
             </button>
-          </form>
-        </div>
 
-        <aside className="space-y-5">
-          <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-6">
-            <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-cyan-400/10">
-              <ShieldCheck className="text-cyan-300" size={23} />
-            </div>
-
-            <h2 className="font-semibold">Payment safety</h2>
-
-            <ul className="mt-4 space-y-3 text-sm leading-5 text-slate-400">
-              <li className="flex gap-2">
-                <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-cyan-300" />
-                Verify the receiver before confirming.
-              </li>
-              <li className="flex gap-2">
-                <LockKeyhole size={17} className="mt-0.5 shrink-0 text-cyan-300" />
-                Requests use your authenticated session.
-              </li>
-              <li className="flex gap-2">
-                <CircleAlert size={17} className="mt-0.5 shrink-0 text-cyan-300" />
-                Never share your password or authentication token.
-              </li>
-            </ul>
-          </div>
-
-          <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-6">
-            <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-blue-400/10">
-              <Wallet className="text-blue-300" size={22} />
-            </div>
-
-            <h2 className="font-semibold">Before you transfer</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-400">
-              Check the recipient and amount carefully. The backend remains
-              responsible for validating account status, balance, and payment
-              rules.
+            <p className="flex items-center justify-center gap-1.5 text-center text-xs text-slate-300">
+              <LockKeyhole size={13} />
+              Review all details before confirming.
             </p>
-          </div>
-        </aside>
+          </form>
+        </motion.section>
+
+        {/* Compact sidebar: balance and reminder only */}
+        <motion.aside
+          {...animateIn}
+          transition={{ delay: 0.12, duration: 0.3 }}
+          className="space-y-4"
+        >
+          <section className="relative overflow-hidden rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-blue-950 via-indigo-950 to-cyan-950 p-5 text-white shadow-[0_16px_45px_rgba(8,145,178,0.12)]">
+            <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-cyan-400/15 blur-2xl" />
+
+            <div className="relative">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-white">
+                  Available balance
+                </p>
+
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/10">
+                  <Wallet size={19} />
+                </div>
+              </div>
+
+              <p className="mt-5 break-words text-2xl font-bold tracking-tight sm:text-3xl">
+                {balanceLoading
+                  ? "Loading..."
+                  : balance === null
+                    ? "Unavailable"
+                    : money(balance)}
+              </p>
+
+              <div className="mt-4 flex items-center justify-between gap-3 border-t border-white/10 pt-3">
+                <span className="flex items-center gap-1.5 text-xs text-sky-100">
+                  <ShieldCheck size={14} />
+                  SafePay account
+                </span>
+
+                <button
+                  type="button"
+                  onClick={loadBalance}
+                  disabled={balanceLoading}
+                  aria-label="Refresh available balance"
+                  className="rounded-lg bg-cyan-400/20 text-white px-3 py-2 text-xs font-semibold transition hover:bg-cyan-400/30 disabled:opacity-70"
+                >
+                  Refresh
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-amber-400/25 bg-gradient-to-br from-amber-950/55 to-orange-950/35 p-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                <CircleAlert size={19} />
+              </div>
+
+              <div>
+                <h3 className="text-sm font-bold text-amber-200">
+                  Before you send
+                </h3>
+                <p className="mt-1 text-xs leading-5 text-amber-100/75">
+                  Double-check the recipient and amount. Avoid submitting
+                  another transfer while an earlier result is uncertain.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <button
+            type="button"
+            onClick={() => navigate("/transactions")}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-200 transition hover:border-cyan-200 hover:bg-cyan-50 hover:text-cyan-800"
+          >
+            <ReceiptText size={17} />
+            Transaction history
+            <ArrowRight size={15} />
+          </button>
+        </motion.aside>
       </div>
 
-      {showConfirmation && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (
-              event.target === event.currentTarget &&
-              !transferLoading
-            ) {
-              setShowConfirmation(false);
-            }
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="confirmation-title"
-            className="my-auto w-full max-w-md rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl sm:p-8"
+      {/* Confirmation modal */}
+      <AnimatePresence>
+        {showConfirmation && (
+          <motion.div
+            key="confirmation"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-sm"
+            onMouseDown={(event) => {
+              if (
+                event.target === event.currentTarget &&
+                !transferLoading
+              ) {
+                setShowConfirmation(false);
+              }
+            }}
           >
-            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-400/10">
-              <ArrowRightLeft className="text-cyan-300" size={24} />
-            </div>
-
-            <h2 id="confirmation-title" className="text-2xl font-bold">
-              Confirm payment
-            </h2>
-
-            <p className="mt-2 text-sm leading-6 text-slate-400">
-              Review the payment details carefully before proceeding.
-            </p>
-
-            <div className="mt-6 space-y-4 rounded-2xl border border-white/10 bg-slate-950/70 p-5">
-              <div>
-                <p className="text-xs text-slate-500">Sending to</p>
-                <p className="mt-1 font-semibold">{receiver?.fullName}</p>
-                <p className="mt-1 text-sm text-slate-400">
-                  {receiver?.maskedPhone}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Account ending in{" "}
-                  {receiver?.maskedAccountNumber.slice(-4)}
-                </p>
-              </div>
-
-              <div className="border-t border-white/10 pt-4">
-                <p className="text-xs text-slate-500">Transfer amount</p>
-                <p className="mt-1 text-3xl font-bold">
-                  ₹
-                  {Number(form.amount).toLocaleString("en-IN", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </p>
-              </div>
-
-              {form.description.trim() && (
-                <div className="border-t border-white/10 pt-4">
-                  <p className="text-xs text-slate-500">Description</p>
-                  <p className="mt-1 break-words text-sm">
-                    {form.description.trim()}
+            <motion.section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="confirmation-title"
+              initial={
+                reduceMotion
+                  ? false
+                  : { opacity: 0, scale: 0.96, y: 15 }
+              }
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              className="my-auto w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+            >
+              <div className="flex items-center justify-between bg-gradient-to-r from-blue-700 via-cyan-600 to-violet-600 px-5 py-4 text-white">
+                <div>
+                  <h2
+                    id="confirmation-title"
+                    className="font-bold"
+                  >
+                    Confirm transfer
+                  </h2>
+                  <p className="mt-1 text-xs text-sky-100">
+                    Review before sending
                   </p>
                 </div>
-              )}
-            </div>
 
-            {riskAssessment && (
-              <section
-                aria-label="Preliminary transaction risk assessment"
-                className={`mt-5 rounded-2xl border p-4 ${
-                  riskAssessment.level === "High"
-                    ? "border-rose-400/30 bg-rose-400/10"
-                    : riskAssessment.level === "Medium"
-                      ? "border-amber-400/30 bg-amber-400/10"
-                      : "border-emerald-400/30 bg-emerald-400/10"
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="rounded-xl bg-slate-950/40 p-2">
-                    <BrainCircuit size={21} />
+                <button
+                  type="button"
+                  aria-label="Close confirmation"
+                  disabled={transferLoading}
+                  onClick={() => setShowConfirmation(false)}
+                  className="rounded-lg p-2 transition hover:bg-white/15 disabled:opacity-70"
+                >
+                  <X size={19} />
+                </button>
+              </div>
+
+              <div className="space-y-4 p-5">
+                <div className="py-2 text-center">
+                  <p className="text-xs text-slate-300">You are sending</p>
+                  <p className="mt-1 text-3xl font-bold text-slate-900">
+                    {money(form.amount)}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                    <UserRound size={21} />
                   </div>
+
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="font-semibold">Transaction risk check</h3>
-                      <span className="rounded-full bg-slate-950/40 px-3 py-1 text-xs font-semibold">
-                        {riskAssessment.level} risk
-                      </span>
-                    </div>
-                    <div className="mt-3 flex items-end gap-2">
-                      <span className="text-3xl font-bold">{riskAssessment.score}</span>
-                      <span className="pb-1 text-sm text-slate-300">/ 100 risk indicator</span>
-                    </div>
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-950/50">
-                      <div
-                        className={`h-full rounded-full ${
-                          riskAssessment.level === "High"
-                            ? "bg-rose-400"
-                            : riskAssessment.level === "Medium"
-                              ? "bg-amber-400"
-                              : "bg-emerald-400"
-                        }`}
-                        style={{ width: `${riskAssessment.score}%` }}
-                      />
-                    </div>
-                    <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-300">
-                      Factors considered
+                    <p className="truncate text-sm font-bold text-emerald-900">
+                      {receiver?.fullName}
                     </p>
-                    <ul className="mt-2 space-y-1 text-sm text-slate-200">
-                      {riskAssessment.factors.map((factor) => (
-                        <li key={factor} className="flex gap-2">
-                          <CircleCheck size={15} className="mt-0.5 shrink-0" />
-                          <span>{factor}</span>
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="mt-3 text-xs leading-5 text-slate-300">
-                      Rule-based preliminary assessment using the amount, balance impact, time of day, description keywords, and recipient lookup. Keyword matches and late-night timing are indicators to review, not proof of fraud.
+                    <p className="mt-1 text-xs text-emerald-800">
+                      {receiver?.maskedPhone}
                     </p>
+                    <p className="mt-1 text-xs text-emerald-800">
+                      Account: {receiver?.maskedAccountNumber}
+                    </p>
+                  </div>
+
+                  <CheckCircle2
+                    size={20}
+                    className="shrink-0 text-emerald-600"
+                  />
+                </div>
+
+                <div className="space-y-3 rounded-xl bg-slate-50 p-4">
+                  <div className="flex justify-between gap-4 text-sm">
+                    <span className="text-slate-300">Amount</span>
+                    <span className="font-semibold text-slate-900">
+                      {money(form.amount)}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between gap-4 text-sm">
+                    <span className="text-slate-300">Description</span>
+                    <span className="max-w-[65%] break-words text-right font-medium text-slate-800">
+                      {form.description.trim() || "No description"}
+                    </span>
                   </div>
                 </div>
-              </section>
-            )}
 
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <button
-                type="button"
-                disabled={transferLoading}
-                onClick={() => setShowConfirmation(false)}
-                className="flex-1 rounded-xl border border-white/10 px-4 py-3 font-medium text-slate-300 transition hover:bg-white/5 disabled:opacity-50"
-              >
-                Go back
-              </button>
+                <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                  <LockKeyhole size={16} className="mt-0.5 shrink-0" />
+                  Confirm only if the recipient and amount are correct.
+                </div>
 
-              <button
-                type="button"
-                disabled={transferLoading}
-                onClick={confirmTransfer}
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {transferLoading ? (
-                  <>
-                    <LoaderCircle size={18} className="animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <LockKeyhole size={17} />
-                    Confirm & Transfer
-                  </>
+                <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    disabled={transferLoading}
+                    onClick={() => setShowConfirmation(false)}
+                    className="flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-70"
+                  >
+                    Go back
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={transferLoading || !receiver}
+                    onClick={confirmTransfer}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 via-violet-500 to-cyan-400 px-4 py-3 text-sm font-bold text-white transition hover:shadow-lg disabled:opacity-70"
+                  >
+                    {transferLoading ? (
+                      <>
+                        <LoaderCircle size={17} className="animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <ArrowRight size={17} />
+                        Confirm & send
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {transferLoading && (
+                  <p
+                    role="status"
+                    aria-live="polite"
+                    className="flex items-center justify-center gap-2 text-xs text-blue-700"
+                  >
+                    <LoaderCircle size={14} className="animate-spin" />
+                    Waiting for the transaction result...
+                  </p>
                 )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </section>
+              </div>
+            </motion.section>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Transaction result */}
+      <AnimatePresence>
+        {receipt && statusDetails && currentStatusStyles && (
+          <motion.div
+            key="receipt"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-sm"
+          >
+            <motion.section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="receipt-title"
+              initial={
+                reduceMotion
+                  ? false
+                  : { opacity: 0, y: 14, scale: 0.97 }
+              }
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="my-auto w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+            >
+              <div
+                className={`border-b px-5 py-6 text-center ${currentStatusStyles.panel}`}
+              >
+                <motion.div
+                  initial={reduceMotion ? false : { scale: 0.6, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 240,
+                    damping: 16,
+                  }}
+                  className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${currentStatusStyles.icon}`}
+                >
+                  <statusDetails.Icon size={34} />
+                </motion.div>
+
+                <h2
+                  id="receipt-title"
+                  className="mt-4 text-xl font-bold text-slate-900"
+                >
+                  {statusDetails.title}
+                </h2>
+
+                <p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-slate-300">
+                  {statusDetails.description}
+                </p>
+
+                <span
+                  className={`mt-3 inline-flex rounded-full border px-3 py-1 text-xs font-bold ${currentStatusStyles.badge}`}
+                >
+                  {statusDetails.label}
+                </span>
+              </div>
+
+              <div className="space-y-4 p-5">
+                <div className="text-center">
+                  <p className="text-xs text-slate-300">Transfer amount</p>
+                  <p className="mt-1 text-3xl font-bold text-slate-900">
+                    {money(receipt.amount)}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 p-3.5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700">
+                      <UserRound size={21} />
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-slate-900">
+                        {receipt.receiverName || "Recipient"}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-300">
+                        {receipt.receiverPhone || "Phone not provided"}
+                      </p>
+                      {receipt.receiverAccount && (
+                        <p className="mt-1 text-xs text-slate-300">
+                          Account: {receipt.receiverAccount}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-3 text-xs">
+                    <span className="shrink-0 text-slate-300">Reference</span>
+                    <span className="break-all text-right font-semibold text-slate-800">
+                      {reference || "Not provided"}
+                    </span>
+                  </div>
+
+                  {reference && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        copyText(reference, "Transaction reference copied.")
+                      }
+                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2.5 text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100"
+                    >
+                      <Copy size={15} />
+                      Copy reference
+                    </button>
+                  )}
+
+                  <div className="flex justify-between gap-3 text-xs">
+                    <span className="text-slate-300">Date</span>
+                    <span className="text-right font-medium text-slate-800">
+                      {formatDate(receipt.completedAt || receipt.createdAt)}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between gap-3 text-xs">
+                    <span className="text-slate-300">Currency</span>
+                    <span className="font-medium text-slate-800">
+                      {receipt.currency || "INR"}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between gap-3 text-xs">
+                    <span className="text-slate-300">Description</span>
+                    <span className="max-w-[65%] break-words text-right font-medium text-slate-800">
+                      {receipt.description || "No description"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 border-t border-dashed border-slate-200 pt-4">
+                  <button
+                    type="button"
+                    onClick={printReceipt}
+                    className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <Printer size={16} />
+                    Print receipt
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReceipt(null);
+                      navigate("/transactions");
+                    }}
+                    className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <ReceiptText size={16} />
+                    View history
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={startAnotherTransfer}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 via-violet-500 to-cyan-400 px-4 py-3 text-sm font-bold text-white transition hover:shadow-lg"
+                >
+                  <ArrowRightLeft size={17} />
+                  New transfer
+                </button>
+              </div>
+            </motion.section>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
