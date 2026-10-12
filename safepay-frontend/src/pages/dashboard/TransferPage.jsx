@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  ArrowLeft,
   ArrowRight,
+  BrainCircuit,
+  CircleCheck,
   ArrowRightLeft,
   CheckCircle2,
   CircleAlert,
@@ -37,6 +38,7 @@ function TransferPage() {
   const [transferLoading, setTransferLoading] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [receipt, setReceipt] = useState(null);
+  const [riskAssessment, setRiskAssessment] = useState(null);
 
   // Keep the same idempotency key when retrying the same payment.
   const [idempotencyKey, setIdempotencyKey] = useState(null);
@@ -61,6 +63,7 @@ function TransferPage() {
     }
 
     setReceipt(null);
+    setRiskAssessment(null);
   }
 
   async function findReceiver(event) {
@@ -77,6 +80,7 @@ function TransferPage() {
     setReceiver(null);
     setReceipt(null);
     setShowConfirmation(false);
+    setRiskAssessment(null);
 
     try {
       const response = await api.get("/api/users/lookup", {
@@ -153,10 +157,109 @@ function TransferPage() {
     return true;
   }
 
-  function openConfirmation(event) {
+  async function openConfirmation(event) {
     event.preventDefault();
 
     if (!validatePayment()) return;
+
+    const amount = Number(form.amount);
+    const factors = [];
+    let score = 10;
+
+    // 1. Transaction amount band.
+    if (amount >= 50000) {
+      score += 25;
+      factors.push("Amount: high-value transfer (₹50,000 or more; +25).");
+    } else if (amount >= 20000) {
+      score += 15;
+      factors.push("Amount: elevated transfer value (₹20,000 or more; +15).");
+    } else if (amount >= 10000) {
+      score += 8;
+      factors.push("Amount: reached the ₹10,000 review band (+8).");
+    } else {
+      factors.push("Amount: below the configured value review bands (+0).");
+    }
+
+    // 2. Amount relative to the sender's current account balance.
+    let balanceAvailable = false;
+    try {
+      const accountResponse = await api.get("/api/accounts/me");
+      const balance = Number(accountResponse.data?.balance);
+
+      if (Number.isFinite(balance) && balance > 0) {
+        balanceAvailable = true;
+        const balanceShare = (amount / balance) * 100;
+
+        if (balanceShare >= 80) {
+          score += 25;
+          factors.push(`Balance impact: transfer uses ${balanceShare.toFixed(0)}% of available balance (+25).`);
+        } else if (balanceShare >= 50) {
+          score += 15;
+          factors.push(`Balance impact: transfer uses ${balanceShare.toFixed(0)}% of available balance (+15).`);
+        } else if (balanceShare >= 25) {
+          score += 8;
+          factors.push(`Balance impact: transfer uses ${balanceShare.toFixed(0)}% of available balance (+8).`);
+        } else {
+          factors.push(`Balance impact: transfer uses ${balanceShare.toFixed(0)}% of available balance (+0).`);
+        }
+      }
+    } catch {
+      // Do not prevent a valid transfer if the balance comparison is unavailable.
+    }
+
+    if (!balanceAvailable) {
+      factors.push("Balance impact: current balance comparison unavailable (not scored).");
+    }
+
+    // 3. Local time-of-day signal.
+    const hour = new Date().getHours();
+    if (hour >= 22 || hour < 5) {
+      score += 15;
+      factors.push(`Transaction time: late-night window (${String(hour).padStart(2, "0")}:00; +15).`);
+    } else {
+      factors.push(`Transaction time: outside the configured late-night window (${String(hour).padStart(2, "0")}:00; +0).`);
+    }
+
+    // 4. Description keyword signal. A keyword match is only a prompt to double-check.
+    const descriptionText = form.description.trim().toLowerCase();
+    const flaggedTerms = [
+      "urgent",
+      "otp",
+      "lottery",
+      "prize",
+      "gift card",
+      "account blocked",
+      "verify account",
+      "refund fee",
+      "claim reward",
+    ];
+    const matchedTerms = flaggedTerms.filter((term) => descriptionText.includes(term));
+
+    if (matchedTerms.length > 0) {
+      score += 20;
+      factors.push(`Description: contains review keywords (${matchedTerms.join(", ")}; +20).`);
+    } else {
+      factors.push("Description: no configured review keywords found (+0).");
+    }
+
+    // 5. Recipient lookup signal: lookup must have succeeded to reach confirmation.
+    if (receiver?.fullName && receiver?.maskedPhone && receiver?.maskedAccountNumber) {
+      score = Math.max(0, score - 10);
+      factors.push("Recipient: registered recipient lookup succeeded (risk-reducing signal; −10).");
+    } else {
+      score += 15;
+      factors.push("Recipient: recipient details could not be confirmed (+15).");
+    }
+
+    score = Math.max(0, Math.min(score, 100));
+    const level = score >= 60 ? "High" : score >= 30 ? "Medium" : "Low";
+
+    setRiskAssessment({
+      score,
+      level,
+      factors,
+      method: "Rule-based preliminary assessment using five available transaction signals",
+    });
 
     if (!idempotencyKey) {
       setIdempotencyKey(crypto.randomUUID());
@@ -245,6 +348,7 @@ function TransferPage() {
     setReceipt(null);
     setShowConfirmation(false);
     setIdempotencyKey(null);
+    setRiskAssessment(null);
   }
 
   if (receipt) {
@@ -587,6 +691,63 @@ function TransferPage() {
                 </div>
               )}
             </div>
+
+            {riskAssessment && (
+              <section
+                aria-label="Preliminary transaction risk assessment"
+                className={`mt-5 rounded-2xl border p-4 ${
+                  riskAssessment.level === "High"
+                    ? "border-rose-400/30 bg-rose-400/10"
+                    : riskAssessment.level === "Medium"
+                      ? "border-amber-400/30 bg-amber-400/10"
+                      : "border-emerald-400/30 bg-emerald-400/10"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="rounded-xl bg-slate-950/40 p-2">
+                    <BrainCircuit size={21} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="font-semibold">Transaction risk check</h3>
+                      <span className="rounded-full bg-slate-950/40 px-3 py-1 text-xs font-semibold">
+                        {riskAssessment.level} risk
+                      </span>
+                    </div>
+                    <div className="mt-3 flex items-end gap-2">
+                      <span className="text-3xl font-bold">{riskAssessment.score}</span>
+                      <span className="pb-1 text-sm text-slate-300">/ 100 risk indicator</span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-950/50">
+                      <div
+                        className={`h-full rounded-full ${
+                          riskAssessment.level === "High"
+                            ? "bg-rose-400"
+                            : riskAssessment.level === "Medium"
+                              ? "bg-amber-400"
+                              : "bg-emerald-400"
+                        }`}
+                        style={{ width: `${riskAssessment.score}%` }}
+                      />
+                    </div>
+                    <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-300">
+                      Factors considered
+                    </p>
+                    <ul className="mt-2 space-y-1 text-sm text-slate-200">
+                      {riskAssessment.factors.map((factor) => (
+                        <li key={factor} className="flex gap-2">
+                          <CircleCheck size={15} className="mt-0.5 shrink-0" />
+                          <span>{factor}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-3 text-xs leading-5 text-slate-300">
+                      Rule-based preliminary assessment using the amount, balance impact, time of day, description keywords, and recipient lookup. Keyword matches and late-night timing are indicators to review, not proof of fraud.
+                    </p>
+                  </div>
+                </div>
+              </section>
+            )}
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <button
